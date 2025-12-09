@@ -1,0 +1,9 @@
+[{
+  "name": "image-api-prod",
+  "script": "./bin/llm_api -f config/config-prod.yaml",
+  "min_uptime": "200",
+  "merge_logs": true,
+  "instances": "1",
+  "exec_mode": "fork",
+  "max_memory_restart": "500M"
+}]
