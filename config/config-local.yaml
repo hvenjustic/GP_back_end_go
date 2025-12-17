@@ -1,0 +1,38 @@
+server:
+  defaultPort: 5010
+  env: local
+  inferencePath: ""
+  source: ""
+
+mysql:
+  dbMysqlAddress: [ "www.hvenjustic.top:3306" ]
+  dbMysqlUserName: "root"
+  dbMysqlPassword: "hvenjustic"
+  dbMysqlDatabaseName: "graduation_project"
+  dbCharset: utf8mb4
+  dbMaxOpenConns: 100
+  dbMaxIdleConns: 20
+  dbMaxLifeTime: 3600
+  dbMaxIdleTime: 600
+  logLevel: 3
+  slowThreshold: 200
+
+redis:
+  dbAddress: [ "www.hvenjustic.top:6379" ]
+  dbIdleTimeout: 120
+  dbUserName:
+  dbPassWord: "hvenjustic"
+  dbPoolSize: 100
+  dbIndex: 0
+  enableCluster: false
+
+
+logSetting:
+  logLevel: 2
+  logName: crawl-api
+  compressSize: 100
+  rotationNum: 10
+
+prometheus:
+  enable: false
+

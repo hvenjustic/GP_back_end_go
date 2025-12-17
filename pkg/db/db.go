@@ -1,7 +1,6 @@
 package db
 
 import (
-	"image-api/pkg/config"
 	"image-api/pkg/log"
 
 	go_redis "github.com/go-redis/redis/v8"
@@ -21,14 +20,9 @@ func key(dbAddress, dbName string) string {
 }
 
 func InitDb() {
-	// 如果是本地测试环境，跳过数据库初始化
-	if config.Config.Server.Env == "dev" {
-		log.Info("InitDb", "skip database init for temp test environment")
-		return
-	}
-
 	//mysql init
 	initMysqlDB()
+	migrateMysqlSchemas()
 	initRedis()
 	initCache()
 	log.Info("InitDb", "db init end")

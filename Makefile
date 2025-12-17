@@ -1,6 +1,6 @@
 .PHONY: all build run gotool install clean help
 
-BINARY_NAME=image_api
+BINARY_NAME=back_end_go
 BIN_DIR=./bin/
 
 all: gotool build
@@ -16,6 +16,7 @@ gotool:
 	go vet ./
 
 install:
+	mkdir -p ${BIN_DIR}
 	make build
 	mv ${BINARY_NAME} ${BIN_DIR}
 

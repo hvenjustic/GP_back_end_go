@@ -8,7 +8,7 @@ import (
 	"image-api/pkg/log"
 )
 
-var configFile = flag.String("f", "config/config-test.yaml", "the config file")
+var configFile = flag.String("f", "config/config-local.yaml", "the config file")
 
 func main() {
 	flag.Parse()
