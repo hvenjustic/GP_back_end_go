@@ -1,6 +1,7 @@
 package crawl
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -12,7 +13,6 @@ import (
 	"image-api/models/dto"
 	model "image-api/models/mysql"
 	"image-api/pkg/config"
-	"image-api/pkg/crawl4ai"
 	"image-api/pkg/db"
 	"image-api/pkg/log"
 	"image-api/pkg/utils"
@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultQueueKey = "crawl4ai"
+const defaultQueueKey = "crawl4ai:queue"
 
 func queueKey() string {
 	return defaultQueueKey
@@ -39,7 +39,6 @@ func SubmitTasks(c *gin.Context) {
 	}
 
 	dao := mysql.NewCrawlTargetDAO()
-	client := crawl4ai.NewClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds)
 	defaultDepth := config.Config.Crawl4AI.DefaultMaxDepth
 	success := 0
 	failures := 0
@@ -87,39 +86,31 @@ func SubmitTasks(c *gin.Context) {
 			maxPages = *item.MaxPages
 		}
 
-		respBody, err := client.DeepCrawl(c.Request.Context(), crawl4ai.DeepCrawlRequest{
-			URLs: []string{target.URL},
-			Options: &crawl4ai.DeepCrawlOptions{
-				MaxDepth:   depthVal,
-				MaxPages:   maxPages,
-				SameDomain: true,
-			},
-		})
-		if err != nil {
-			log.Error("SubmitTasks", "crawl4ai failed", err.Error(), "url", target.URL)
-			failures++
-			continue
+		if db.DB.RDB == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "redis not initialized"})
+			return
 		}
-
-		now := time.Now()
-		patch := map[string]any{
-			"updated_at": now,
-			"is_crawled": true,
-			"crawled_at": now,
-			"result_md":  string(respBody),
+		queueItem := map[string]any{
+			"id":        target.ID,
+			"url":       target.URL,
+			"site_name": siteName,
+			"max_depth": depthVal,
+			"max_pages": maxPages,
 		}
-		if _, err := dao.ApplyResultByIDOrURL(&target.ID, target.URL, patch); err != nil {
-			log.Error("SubmitTasks", "apply result failed", err.Error(), "url", target.URL)
+		b, _ := json.Marshal(queueItem)
+		if err := db.DB.RDB.RPush(c.Request.Context(), queueKey(), string(b)).Err(); err != nil {
+			log.Error("SubmitTasks", "enqueue failed", err.Error(), "url", target.URL)
 			failures++
 			continue
 		}
 		success++
 	}
 
+	pending, _ := db.DB.RDB.LLen(c.Request.Context(), queueKey()).Result()
 	c.JSON(http.StatusOK, dto.SubmitTasksResponse{
 		Queued:   success,
 		QueueKey: queueKey(),
-		Pending:  0,
+		Pending:  pending,
 	})
 }
 
