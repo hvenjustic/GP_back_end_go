@@ -1,8 +1,6 @@
 package crawl
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -11,93 +9,26 @@ import (
 	"time"
 
 	"image-api/internal/mysql"
+	"image-api/models/dto"
+	model "image-api/models/mysql"
+	"image-api/pkg/config"
+	"image-api/pkg/crawl4ai"
 	"image-api/pkg/db"
 	"image-api/pkg/log"
+	"image-api/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-const defaultQueueKey = "crawl_tasks"
-
-type TaskItem struct {
-	URL      string `json:"url"`
-	SiteName string `json:"site_name,omitempty"`
-	MaxDepth *int   `json:"max_depth,omitempty"`
-	MaxPages *int   `json:"max_pages,omitempty"`
-}
-
-type SubmitTasksRequest struct {
-	URLs     []TaskItem `json:"urls"`
-	MaxDepth *int       `json:"max_depth,omitempty"`
-	MaxPages *int       `json:"max_pages,omitempty"`
-}
-
-type SubmitTasksResponse struct {
-	Queued   int    `json:"queued"`
-	QueueKey string `json:"queue_key"`
-	Pending  int64  `json:"pending"`
-}
-
-type StatusResponse struct {
-	Pending  int64  `json:"pending"`
-	QueueKey string `json:"queue_key"`
-}
-
-type TaskResultCallbackRequest struct {
-	ID uint64 `json:"id,omitempty"`
-
-	SiteName string `json:"site_name,omitempty"`
-	URL      string `json:"url"`
-
-	CrawledAt      *string `json:"crawled_at,omitempty"`       // RFC3339 或 "2006-01-02 15:04:05"
-	LLMProcessedAt *string `json:"llm_processed_at,omitempty"` // RFC3339 或 "2006-01-02 15:04:05"
-
-	IsCrawled  *bool `json:"is_crawled,omitempty"`
-	PageCount  *int  `json:"page_count,omitempty"`
-	ChunkCount *int  `json:"chunk_count,omitempty"`
-
-	ResultMD  *string `json:"result_md,omitempty"`
-	GraphJSON *string `json:"graph_json,omitempty"`
-
-	CrawlDurationMs *int64 `json:"crawl_duration_ms,omitempty"`
-	LLMDurationMs   *int64 `json:"llm_duration_ms,omitempty"`
-}
+const defaultQueueKey = "crawl4ai"
 
 func queueKey() string {
 	return defaultQueueKey
 }
 
-func parseTimeFlexible(input *string) (*time.Time, error) {
-	if input == nil {
-		return nil, nil
-	}
-	text := strings.TrimSpace(*input)
-	if text == "" {
-		return nil, nil
-	}
-	if t, err := time.Parse(time.RFC3339, text); err == nil {
-		return &t, nil
-	}
-	if t, err := time.ParseInLocation("2006-01-02 15:04:05", text, time.Local); err == nil {
-		return &t, nil
-	}
-	return nil, errors.New("invalid time format")
-}
-
-func deriveSiteName(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	if u.Host != "" {
-		return u.Host
-	}
-	return ""
-}
-
 func SubmitTasks(c *gin.Context) {
-	var req SubmitTasksRequest
+	var req dto.SubmitTasksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -107,80 +38,102 @@ func SubmitTasks(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
 	dao := mysql.NewCrawlTargetDAO()
+	client := crawl4ai.NewClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds)
+	defaultDepth := config.Config.Crawl4AI.DefaultMaxDepth
+	success := 0
+	failures := 0
 
-	queued := 0
 	for _, item := range req.URLs {
 		rawURL := strings.TrimSpace(item.URL)
 		if rawURL == "" {
+			failures++
 			continue
 		}
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" {
+			failures++
+			continue
+		}
+
 		siteName := strings.TrimSpace(item.SiteName)
 		if siteName == "" {
-			siteName = deriveSiteName(rawURL)
+			siteName = utils.DeriveSiteName(rawURL)
 		}
 
 		target, err := dao.UpsertForSubmission(rawURL, siteName)
 		if err != nil {
 			log.Error("SubmitTasks", "upsert failed", err.Error(), "url", rawURL)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+			failures++
+			continue
 		}
 
 		maxDepth := req.MaxDepth
 		if item.MaxDepth != nil {
 			maxDepth = item.MaxDepth
 		}
-		maxPages := req.MaxPages
-		if item.MaxPages != nil {
-			maxPages = item.MaxPages
-		}
-
-		payload := map[string]any{
-			"id":        target.ID,
-			"url":       target.URL,
-			"site_name": target.SiteName,
-		}
+		depthVal := defaultDepth
 		if maxDepth != nil {
-			payload["max_depth"] = *maxDepth
+			depthVal = *maxDepth
 		}
-		if maxPages != nil {
-			payload["max_pages"] = *maxPages
+		if depthVal <= 0 {
+			depthVal = 2
 		}
-		b, _ := json.Marshal(payload)
-		if err := db.DB.RDB.RPush(ctx, queueKey(), string(b)).Err(); err != nil {
-			log.Error("SubmitTasks", "rpush failed", err.Error())
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		maxPages := 0
+		if req.MaxPages != nil {
+			maxPages = *req.MaxPages
 		}
-		queued++
+		if item.MaxPages != nil {
+			maxPages = *item.MaxPages
+		}
+
+		respBody, err := client.DeepCrawl(c.Request.Context(), crawl4ai.DeepCrawlRequest{
+			URLs: []string{target.URL},
+			Options: &crawl4ai.DeepCrawlOptions{
+				MaxDepth:   depthVal,
+				MaxPages:   maxPages,
+				SameDomain: true,
+			},
+		})
+		if err != nil {
+			log.Error("SubmitTasks", "crawl4ai failed", err.Error(), "url", target.URL)
+			failures++
+			continue
+		}
+
+		now := time.Now()
+		patch := map[string]any{
+			"updated_at": now,
+			"is_crawled": true,
+			"crawled_at": now,
+			"result_md":  string(respBody),
+		}
+		if _, err := dao.ApplyResultByIDOrURL(&target.ID, target.URL, patch); err != nil {
+			log.Error("SubmitTasks", "apply result failed", err.Error(), "url", target.URL)
+			failures++
+			continue
+		}
+		success++
 	}
 
-	pending, err := db.DB.RDB.LLen(ctx, queueKey()).Result()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, SubmitTasksResponse{
-		Queued:   queued,
+	c.JSON(http.StatusOK, dto.SubmitTasksResponse{
+		Queued:   success,
 		QueueKey: queueKey(),
-		Pending:  pending,
+		Pending:  0,
 	})
 }
 
 func GetStatus(c *gin.Context) {
-	ctx := context.Background()
-	pending, err := db.DB.RDB.LLen(ctx, queueKey()).Result()
-	if err != nil {
+	var pending int64
+	if err := db.DB.MysqlDB.ReadDB().Model(&model.CrawlTarget{}).Where("is_crawled = ?", false).Count(&pending).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, StatusResponse{Pending: pending, QueueKey: queueKey()})
+	c.JSON(http.StatusOK, dto.StatusResponse{Pending: pending, QueueKey: queueKey()})
 }
 
 func PostTaskResult(c *gin.Context) {
-	var req TaskResultCallbackRequest
+	var req dto.TaskResultCallbackRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -191,12 +144,12 @@ func PostTaskResult(c *gin.Context) {
 		return
 	}
 
-	crawledAt, err := parseTimeFlexible(req.CrawledAt)
+	crawledAt, err := utils.ParseTimeFlexible(req.CrawledAt)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "crawled_at invalid"})
 		return
 	}
-	llmProcessedAt, err := parseTimeFlexible(req.LLMProcessedAt)
+	llmProcessedAt, err := utils.ParseTimeFlexible(req.LLMProcessedAt)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "llm_processed_at invalid"})
 		return
@@ -263,7 +216,10 @@ func PostTaskResult(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "data": out})
+	c.JSON(http.StatusOK, dto.TaskResultResponse{
+		Status: "ok",
+		Data:   out,
+	})
 }
 
 func ListResults(c *gin.Context) {
@@ -284,11 +240,11 @@ func ListResults(c *gin.Context) {
 	if pageSize > 100 {
 		pageSize = 100
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"items":     items,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
+	c.JSON(http.StatusOK, dto.ListResultsResponse{
+		Items:    items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
 	})
 }
 

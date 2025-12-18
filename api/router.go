@@ -20,9 +20,6 @@ func SetRouter(r *gin.Engine) {
 	{
 		apiGroup.POST("/tasks", crawl.SubmitTasks)
 		apiGroup.GET("/tasks/status", crawl.GetStatus)
-
-		apiGroup.POST("/tasks/result", crawl.PostTaskResult) // Python 回传任务结果
-
 		apiGroup.GET("/results", crawl.ListResults)
 		apiGroup.GET("/results/:id", crawl.GetResultDetail)
 	}

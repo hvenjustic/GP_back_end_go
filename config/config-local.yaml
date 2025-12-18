@@ -4,6 +4,11 @@ server:
   inferencePath: ""
   source: ""
 
+crawl4ai:
+  baseUrl: "http://43.139.166.203:11235"
+  timeoutSeconds: 30
+  defaultMaxDepth: 2
+
 mysql:
   dbMysqlAddress: [ "www.hvenjustic.top:3306" ]
   dbMysqlUserName: "root"
@@ -20,7 +25,7 @@ mysql:
 redis:
   dbAddress: [ "www.hvenjustic.top:6379" ]
   dbIdleTimeout: 120
-  dbUserName:
+  dbUserName: 
   dbPassWord: "hvenjustic"
   dbPoolSize: 100
   dbIndex: 0

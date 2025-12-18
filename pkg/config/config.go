@@ -18,6 +18,12 @@ type config struct {
 		InferencePath string `yaml:"inferencePath"`
 	} `yaml:"server"`
 
+	Crawl4AI struct {
+		BaseURL         string `yaml:"baseUrl"`
+		TimeoutSeconds  int    `yaml:"timeoutSeconds"`
+		DefaultMaxDepth int    `yaml:"defaultMaxDepth"`
+	} `yaml:"crawl4ai"`
+
 	Mysql struct {
 		DBAddress      []string `yaml:"dbMysqlAddress"`
 		DBUserName     string   `yaml:"dbMysqlUserName"`

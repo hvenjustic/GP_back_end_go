@@ -1,6 +1,6 @@
-module image-api
+module graduation_project
 
-go 1.22
+go 1.23.1
 
 toolchain go1.23.1
 
