@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'back_end_go',
+      name: 'GP_back_end_go',
       cwd: __dirname,
       script: 'bash',
       args: ['-lc', 'mkdir -p logs && make install && ./bin/back_end_go -f config/config-local.yaml'],
