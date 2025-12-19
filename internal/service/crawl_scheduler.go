@@ -62,6 +62,7 @@ func NewCrawlScheduler() *CrawlScheduler {
 }
 
 func (s *CrawlScheduler) Start(ctx context.Context) {
+	log.Info("CrawlScheduler", "start scheduler loop", "poll_interval", s.pollInterval, "max_concurrent", s.maxConcurrent)
 	t := time.NewTicker(s.pollInterval)
 	defer t.Stop()
 
@@ -77,12 +78,14 @@ func (s *CrawlScheduler) Start(ctx context.Context) {
 }
 
 func (s *CrawlScheduler) Tick(ctx context.Context) error {
+	log.Info("CrawlScheduler", "tick begin")
 	if err := s.pollActive(ctx); err != nil {
 		log.Error("CrawlScheduler", "pollActive failed", err.Error())
 	}
 	if err := s.startNew(ctx); err != nil {
 		log.Error("CrawlScheduler", "startNew failed", err.Error())
 	}
+	log.Info("CrawlScheduler", "tick end")
 	return nil
 }
 
@@ -90,6 +93,7 @@ func (s *CrawlScheduler) startNew(ctx context.Context) error {
 	if db.DB.RDB == nil {
 		return fmt.Errorf("redis not initialized")
 	}
+	log.Info("CrawlScheduler", "startNew check", "queue_key", s.queueKey, "active_set_key", s.activeSetKey)
 	defaultMaxPages := config.Config.Crawl4AI.DefaultMaxPages
 	if defaultMaxPages <= 0 {
 		defaultMaxPages = 10
@@ -175,6 +179,7 @@ func (s *CrawlScheduler) pollActive(ctx context.Context) error {
 	if db.DB.RDB == nil {
 		return fmt.Errorf("redis not initialized")
 	}
+	log.Info("CrawlScheduler", "pollActive check", "active_set_key", s.activeSetKey)
 
 	taskIDs, err := db.DB.RDB.SMembers(ctx, s.activeSetKey).Result()
 	if err != nil {
