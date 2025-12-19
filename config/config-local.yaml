@@ -35,7 +35,7 @@ redis:
 
 logSetting:
   logLevel: 1
-  logName: crawl-api
+  logName: graph-api
   compressSize: 100
   rotationNum: 10
 

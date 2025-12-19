@@ -3,16 +3,13 @@ package api
 import (
 	"fmt"
 
-	"image-api/api/middleware"
-	"image-api/pkg/config"
-	"image-api/pkg/log"
-
-	"github.com/getsentry/sentry-go"
-	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"image-api/api/middleware"
+	"image-api/pkg/config"
+	"image-api/pkg/log"
 )
 
 func Run() {
@@ -28,25 +25,6 @@ func Run() {
 	gin.DefaultWriter = logFile
 	gin.DefaultErrorWriter = logFile
 	r := gin.Default()
-	if config.Config.Server.Env == "prod" {
-		err := sentry.Init(sentry.ClientOptions{
-			Dsn:           "https://dcf720463a4539ee9423eae86d733805@o4508963658268672.ingest.us.sentry.io/4509053306667008",
-			EnableTracing: true,
-			// Set TracesSampleRate to 1.0 to capture 100%
-			// of transactions for tracing.
-			// We recommend adjusting this value in production,
-			TracesSampleRate: 0.1,
-		})
-		if err != nil {
-			log.Error("init sentry", "failed", err)
-		} else {
-			r.Use(sentrygin.New(sentrygin.Options{
-				Repanic:         true,
-				WaitForDelivery: false,
-			}))
-			log.Info("init sentry", "success")
-		}
-	}
 	r.Use(gin.Recovery())
 	r.Use(cors.Default())
 	r.Use(middleware.TimeCostLog())

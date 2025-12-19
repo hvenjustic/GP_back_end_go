@@ -1,4 +1,4 @@
-package worker
+package service
 
 import (
 	"context"
@@ -8,19 +8,14 @@ import (
 	"time"
 
 	"image-api/internal/mysql"
+	"image-api/models/dto"
 	"image-api/pkg/config"
-	"image-api/pkg/crawl4ai"
+	"image-api/pkg/constants"
 	"image-api/pkg/db"
 	"image-api/pkg/log"
 
 	go_redis "github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
-)
-
-const (
-	defaultQueueKey     = "crawl4ai:queue"
-	defaultActiveSetKey = "crawl4ai:active"
-	defaultTaskKeyPref  = "crawl4ai:task:"
 )
 
 type QueueItem struct {
@@ -39,7 +34,7 @@ type CrawlScheduler struct {
 	maxConcurrent int64
 	pollInterval  time.Duration
 
-	client *crawl4ai.Client
+	client *Crawl4AIClient
 	dao    *mysql.CrawlTargetDAO
 }
 
@@ -56,12 +51,12 @@ func NewCrawlScheduler() *CrawlScheduler {
 		config.Config.Crawl4AI.TimeoutSeconds = 30
 	}
 	return &CrawlScheduler{
-		queueKey:      defaultQueueKey,
-		activeSetKey:  defaultActiveSetKey,
-		taskKeyPref:   defaultTaskKeyPref,
+		queueKey:      constants.CrawlQueueKey,
+		activeSetKey:  constants.CrawlActiveSetKey,
+		taskKeyPref:   constants.CrawlTaskKeyPref,
 		maxConcurrent: maxConcurrent,
 		pollInterval:  pollInterval,
-		client:        crawl4ai.NewClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds),
+		client:        NewCrawl4AIClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds),
 		dao:           mysql.NewCrawlTargetDAO(),
 	}
 }
@@ -131,10 +126,9 @@ func (s *CrawlScheduler) startNew(ctx context.Context) error {
 			maxPages = *item.MaxPages
 		}
 
-		// crawl4ai REST 要求配置对象使用 {"type": "...","params": {...}} 序列化，否则后端会忽略深度/分页参数。
 		crawlerParams := map[string]any{
-			"include_external":       false, // 只站内跟链
-			"exclude_external_links": true,  // 结果里尽量剔除外链
+			"include_external":       false,
+			"exclude_external_links": true,
 		}
 		if maxDepth > 0 {
 			crawlerParams["max_depth"] = maxDepth
@@ -147,7 +141,7 @@ func (s *CrawlScheduler) startNew(ctx context.Context) error {
 			"params": crawlerParams,
 		}
 
-		taskID, err := s.client.EnqueueCrawlJob(ctx, crawl4ai.CrawlJobPayload{
+		taskID, err := s.client.EnqueueCrawlJob(ctx, dto.CrawlJobPayload{
 			URLs:          []string{item.URL},
 			CrawlerConfig: crawlerCfg,
 		})
@@ -196,6 +190,11 @@ func (s *CrawlScheduler) pollActive(ctx context.Context) error {
 		if err != nil {
 			log.Error("CrawlScheduler", "get job failed", err.Error(), "task_id", taskID)
 			continue
+		}
+		if raw, err := json.Marshal(job); err != nil {
+			log.Error("CrawlScheduler", "marshal job resp failed", err.Error(), "task_id", taskID)
+		} else {
+			log.Info("CrawlScheduler", "poll progress", "task_id", taskID, "resp", string(raw))
 		}
 
 		status := strings.ToLower(strings.TrimSpace(job.Status))
@@ -300,7 +299,7 @@ func parseQueueItem(raw string) (QueueItem, error) {
 	return item, nil
 }
 
-func extractMarkdown(job *crawl4ai.CrawlJobStatusResponse) (md string, pageCount int) {
+func extractMarkdown(job *dto.CrawlJobStatusResponse) (md string, pageCount int) {
 	if job == nil || job.Result == nil || len(job.Result.Results) == 0 {
 		return "", 0
 	}

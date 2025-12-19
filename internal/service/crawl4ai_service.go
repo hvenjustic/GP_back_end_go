@@ -1,4 +1,4 @@
-package crawl4ai
+package service
 
 import (
 	"context"
@@ -9,30 +9,19 @@ import (
 
 	"resty.dev/v3"
 
+	"image-api/models/dto"
+	"image-api/pkg/constants"
 	"image-api/pkg/log"
 )
 
-const defaultBaseURL = "http://43.139.166.203:11235"
-
-type Client struct {
+type Crawl4AIClient struct {
 	baseURL string
 	resty   *resty.Client
 }
 
-type DeepCrawlOptions struct {
-	MaxDepth   int  `json:"max_depth,omitempty"`
-	MaxPages   int  `json:"max_pages,omitempty"`
-	SameDomain bool `json:"same_domain,omitempty"`
-}
-
-type DeepCrawlRequest struct {
-	URLs    []string          `json:"urls"`
-	Options *DeepCrawlOptions `json:"options,omitempty"`
-}
-
-func NewClient(baseURL string, timeoutSeconds int) *Client {
+func NewCrawl4AIClient(baseURL string, timeoutSeconds int) *Crawl4AIClient {
 	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultBaseURL
+		baseURL = constants.DefaultCrawl4AIBaseURL
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
 	if timeoutSeconds <= 0 {
@@ -41,11 +30,11 @@ func NewClient(baseURL string, timeoutSeconds int) *Client {
 	r := resty.New().
 		SetBaseURL(baseURL).
 		SetTimeout(time.Duration(timeoutSeconds) * time.Second)
-	return &Client{baseURL: baseURL, resty: r}
+	return &Crawl4AIClient{baseURL: baseURL, resty: r}
 }
 
 // DeepCrawl 使用 crawl4ai 的 /crawl 同步接口（历史逻辑保留，但项目新流程应使用异步 Job Queue）。
-func (c *Client) DeepCrawl(ctx context.Context, req DeepCrawlRequest) ([]byte, error) {
+func (c *Crawl4AIClient) DeepCrawl(ctx context.Context, req dto.DeepCrawlRequest) ([]byte, error) {
 	if len(req.URLs) == 0 {
 		return nil, fmt.Errorf("urls empty")
 	}
@@ -68,46 +57,8 @@ func (c *Client) DeepCrawl(ctx context.Context, req DeepCrawlRequest) ([]byte, e
 	return resp.Bytes(), nil
 }
 
-type CrawlJobPayload struct {
-	URLs          []string `json:"urls"`
-	Priority      *int     `json:"priority,omitempty"`
-	BrowserConfig any      `json:"browser_config,omitempty"`
-	CrawlerConfig any      `json:"crawler_config,omitempty"`
-	WebhookConfig any      `json:"webhook_config,omitempty"`
-}
-
-type CrawlJobEnqueueResponse struct {
-	TaskID  string `json:"task_id"`
-	Message string `json:"message,omitempty"`
-}
-
-type CrawlJobStatusResponse struct {
-	TaskID  string     `json:"task_id"`
-	Status  string     `json:"status"`
-	Message string     `json:"message,omitempty"`
-	Result  *JobResult `json:"result,omitempty"`
-}
-
-type JobResult struct {
-	Success bool            `json:"success"`
-	Results []JobPageResult `json:"results,omitempty"`
-}
-
-type JobPageResult struct {
-	URL          string `json:"url,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
-
-	// markdown 可能是 string 或对象（MarkdownGenerationResult）
-	Markdown any `json:"markdown,omitempty"`
-}
-
-type MarkdownGenerationResult struct {
-	RawMarkdown        string `json:"raw_markdown,omitempty"`
-	ReferencesMarkdown string `json:"references_markdown,omitempty"`
-}
-
 // EnqueueCrawlJob 提交异步任务：POST /crawl/job
-func (c *Client) EnqueueCrawlJob(ctx context.Context, payload CrawlJobPayload) (string, error) {
+func (c *Crawl4AIClient) EnqueueCrawlJob(ctx context.Context, payload dto.CrawlJobPayload) (string, error) {
 	if len(payload.URLs) == 0 {
 		return "", fmt.Errorf("urls empty")
 	}
@@ -129,7 +80,7 @@ func (c *Client) EnqueueCrawlJob(ctx context.Context, payload CrawlJobPayload) (
 	}
 
 	respBody := resp.Bytes()
-	var out CrawlJobEnqueueResponse
+	var out dto.CrawlJobEnqueueResponse
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return "", err
 	}
@@ -142,7 +93,7 @@ func (c *Client) EnqueueCrawlJob(ctx context.Context, payload CrawlJobPayload) (
 
 // GetCrawlJob 查询任务状态/获取结果。
 // 兼容不同镜像版本：优先 /crawl/job/{task_id}，再尝试 /job/{task_id} 与 /task/{task_id}。
-func (c *Client) GetCrawlJob(ctx context.Context, taskID string) (*CrawlJobStatusResponse, error) {
+func (c *Crawl4AIClient) GetCrawlJob(ctx context.Context, taskID string) (*dto.CrawlJobStatusResponse, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
 		return nil, fmt.Errorf("task_id empty")
@@ -164,7 +115,7 @@ func (c *Client) GetCrawlJob(ctx context.Context, taskID string) (*CrawlJobStatu
 	return nil, lastErr
 }
 
-func (c *Client) getJobOnce(ctx context.Context, url string) (*CrawlJobStatusResponse, error) {
+func (c *Crawl4AIClient) getJobOnce(ctx context.Context, url string) (*dto.CrawlJobStatusResponse, error) {
 	resp, err := c.resty.R().
 		SetContext(ctx).
 		Get(url)
@@ -174,7 +125,7 @@ func (c *Client) getJobOnce(ctx context.Context, url string) (*CrawlJobStatusRes
 	if resp.StatusCode() >= 300 {
 		return nil, fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode(), resp.String())
 	}
-	var out CrawlJobStatusResponse
+	var out dto.CrawlJobStatusResponse
 	if err := json.Unmarshal(resp.Bytes(), &out); err != nil {
 		return nil, err
 	}
