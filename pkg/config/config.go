@@ -25,6 +25,15 @@ type config struct {
 		DefaultMaxPages int    `yaml:"defaultMaxPages"`
 	} `yaml:"crawl4ai"`
 
+	OSS struct {
+		Endpoint        string `yaml:"endpoint"`
+		Bucket          string `yaml:"bucket"`
+		AccessKeyID     string `yaml:"accessKeyId"`
+		AccessKeySecret string `yaml:"accessKeySecret"`
+		UseHTTPS        bool   `yaml:"useHttps"`
+		Prefix          string `yaml:"prefix"`
+	} `yaml:"oss"`
+
 	Mysql struct {
 		DBAddress      []string `yaml:"dbMysqlAddress"`
 		DBUserName     string   `yaml:"dbMysqlUserName"`

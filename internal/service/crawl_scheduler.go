@@ -35,8 +35,9 @@ type CrawlScheduler struct {
 	maxConcurrent int64
 	pollInterval  time.Duration
 
-	client *Crawl4AIClient
-	dao    *mysql.CrawlTargetDAO
+	client      *Crawl4AIClient
+	dao         *mysql.CrawlTargetDAO
+	ossUploader *OSSUploader
 }
 
 func NewCrawlScheduler() *CrawlScheduler {
@@ -59,6 +60,7 @@ func NewCrawlScheduler() *CrawlScheduler {
 		pollInterval:  pollInterval,
 		client:        NewCrawl4AIClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds),
 		dao:           mysql.NewCrawlTargetDAO(),
+		ossUploader:   InitOSSUploader(),
 	}
 }
 
@@ -203,7 +205,7 @@ func (s *CrawlScheduler) pollActive(ctx context.Context) error {
 			if err != nil {
 				log.Error("CrawlScheduler", "loadTaskMeta failed", err.Error(), "task_id", taskID)
 			}
-			md, pageCount := extractMarkdown(job)
+			md, pageCount := s.buildAndStoreMarkdown(ctx, job)
 			now := time.Now()
 
 			if targetID > 0 {
@@ -300,28 +302,55 @@ func parseQueueItem(raw string) (QueueItem, error) {
 	return item, nil
 }
 
-func extractMarkdown(job *dto.CrawlJobStatusResponse) (md string, pageCount int) {
+func (s *CrawlScheduler) buildAndStoreMarkdown(ctx context.Context, job *dto.CrawlJobStatusResponse) (mdJSON string, pageCount int) {
 	if job == nil || job.Result == nil || len(job.Result.Results) == 0 {
 		return "", 0
 	}
 	pageCount = len(job.Result.Results)
-
-	var b strings.Builder
-	for idx, r := range job.Result.Results {
-		fit := pickFitMarkdown(r.Markdown)
-		fit = strings.TrimSpace(fit)
-		if fit == "" {
-			continue
-		}
-		b.WriteString("# chunk:")
-		b.WriteString(fmt.Sprintf("%d", idx))
-		b.WriteString("\n\n")
-		b.WriteString(fit)
-		if idx < pageCount-1 {
-			b.WriteString("\n\n")
-		}
+	store := dto.MarkdownStore{
+		Nums:                  pageCount,
+		RawMarkdown:           make([]string, 0, pageCount),
+		FitMarkdown:           make([]string, 0, pageCount),
+		MarkdownWithCitations: make([]string, 0, pageCount),
 	}
-	return strings.TrimSpace(b.String()), pageCount
+
+	for idx, r := range job.Result.Results {
+		baseName := SafeObjectKeyFromURL(r.URL, idx)
+
+		raw := pickRawMarkdown(r.Markdown)
+		rawURL := ""
+		if url, err := s.uploadMarkdown(ctx, baseName, idx, "raw", raw); err != nil {
+			log.Error("CrawlScheduler", "upload raw markdown failed", err.Error(), "task_id", job.TaskID, "idx", idx)
+		} else {
+			rawURL = url
+		}
+		store.RawMarkdown = append(store.RawMarkdown, rawURL)
+
+		fit := pickFitMarkdown(r.Markdown)
+		fitURL := ""
+		if url, err := s.uploadMarkdown(ctx, baseName, idx, "fit", fit); err != nil {
+			log.Error("CrawlScheduler", "upload fit markdown failed", err.Error(), "task_id", job.TaskID, "idx", idx)
+		} else {
+			fitURL = url
+		}
+		store.FitMarkdown = append(store.FitMarkdown, fitURL)
+
+		citations := pickCitationsMarkdown(r.Markdown)
+		citeURL := ""
+		if url, err := s.uploadMarkdown(ctx, baseName, idx, "citations", citations); err != nil {
+			log.Error("CrawlScheduler", "upload citations markdown failed", err.Error(), "task_id", job.TaskID, "idx", idx)
+		} else {
+			citeURL = url
+		}
+		store.MarkdownWithCitations = append(store.MarkdownWithCitations, citeURL)
+	}
+
+	b, err := json.Marshal(store)
+	if err != nil {
+		log.Error("CrawlScheduler", "marshal markdown store failed", err.Error())
+		return "", pageCount
+	}
+	return string(b), pageCount
 }
 
 func (s *CrawlScheduler) loadTaskMeta(ctx context.Context, taskKey string) (targetID uint64, url string, err error) {
@@ -338,6 +367,15 @@ func (s *CrawlScheduler) loadTaskMeta(ctx context.Context, taskKey string) (targ
 		}
 	}
 	return targetID, url, nil
+}
+
+func (s *CrawlScheduler) uploadMarkdown(ctx context.Context, baseName string, idx int, kind string, content string) (string, error) {
+	if s.ossUploader == nil {
+		return "", fmt.Errorf("oss uploader not initialized")
+	}
+	objectKey := fmt.Sprintf("%s_%s.md", baseName, kind)
+	// 即使内容为空也上传，便于对齐索引
+	return s.ossUploader.UploadString(ctx, objectKey, content)
 }
 
 func (s *CrawlScheduler) buildCrawlJobPayload(item QueueItem, maxDepth, maxPages int) dto.CrawlJobPayload {
@@ -430,6 +468,54 @@ func pickFitMarkdown(md any) string {
 		}
 		if raw, ok := m["raw_markdown"].(string); ok && strings.TrimSpace(raw) != "" {
 			return strings.TrimSpace(raw)
+		}
+	}
+	return ""
+}
+
+func pickRawMarkdown(md any) string {
+	switch v := md.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]any:
+		if raw, ok := v["raw_markdown"].(string); ok {
+			return strings.TrimSpace(raw)
+		}
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			return ""
+		}
+		if raw, ok := m["raw_markdown"].(string); ok {
+			return strings.TrimSpace(raw)
+		}
+	}
+	return ""
+}
+
+func pickCitationsMarkdown(md any) string {
+	switch v := md.(type) {
+	case string:
+		return ""
+	case map[string]any:
+		if cite, ok := v["markdown_with_citations"].(string); ok {
+			return strings.TrimSpace(cite)
+		}
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			return ""
+		}
+		if cite, ok := m["markdown_with_citations"].(string); ok {
+			return strings.TrimSpace(cite)
 		}
 	}
 	return ""

@@ -58,3 +58,11 @@ type MarkdownGenerationResult struct {
 	RawMarkdown           string `json:"raw_markdown,omitempty"`
 	ReferencesMarkdown    string `json:"references_markdown,omitempty"`
 }
+
+// MarkdownStore 用于在数据库中记录各类 markdown 对象的 OSS URL 列表。
+type MarkdownStore struct {
+	Nums                  int      `json:"nums"`
+	RawMarkdown           []string `json:"raw_markdown"`
+	FitMarkdown           []string `json:"fit_markdown"`
+	MarkdownWithCitations []string `json:"markdown_with_citations"`
+}

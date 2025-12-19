@@ -10,6 +10,14 @@ crawl4ai:
   defaultMaxDepth: 3
   defaultMaxPages: 10
 
+oss:
+  endpoint: "https://oss-cn-beijing.aliyuncs.com"        # 例如 
+  bucket: "knowledge-graph-crawl-md"
+  accessKeyId: "<your-access-key-id>"
+  accessKeySecret: "<your-access-key-secret>"
+  useHttps: true
+  prefix: ""                             # 可选：对象键前缀，如 crawl/md
+
 mysql:
   dbMysqlAddress: [ "www.hvenjustic.top:3306" ]
   dbMysqlUserName: "root"
