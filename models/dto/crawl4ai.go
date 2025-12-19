@@ -15,11 +15,12 @@ type DeepCrawlRequest struct {
 
 // CrawlJobPayload 异步任务入队请求体
 type CrawlJobPayload struct {
-	URLs          []string `json:"urls"`
-	Priority      *int     `json:"priority,omitempty"`
-	BrowserConfig any      `json:"browser_config,omitempty"`
-	CrawlerConfig any      `json:"crawler_config,omitempty"`
-	WebhookConfig any      `json:"webhook_config,omitempty"`
+	URLs            []string `json:"urls"`
+	Priority        *int     `json:"priority,omitempty"`
+	BrowserConfig   any      `json:"browser_config,omitempty"`
+	CrawlerConfig   any      `json:"crawler_config,omitempty"`
+	ExtractorConfig any      `json:"extractor_config,omitempty"`
+	WebhookConfig   any      `json:"webhook_config,omitempty"`
 }
 
 // CrawlJobEnqueueResponse 异步任务入队响应
@@ -51,6 +52,9 @@ type JobPageResult struct {
 
 // MarkdownGenerationResult markdown 生成结果
 type MarkdownGenerationResult struct {
-	RawMarkdown        string `json:"raw_markdown,omitempty"`
-	ReferencesMarkdown string `json:"references_markdown,omitempty"`
+	FitHTML               string `json:"fit_html,omitempty"`
+	FitMarkdown           string `json:"fit_markdown,omitempty"`
+	MarkdownWithCitations string `json:"markdown_with_citations,omitempty"`
+	RawMarkdown           string `json:"raw_markdown,omitempty"`
+	ReferencesMarkdown    string `json:"references_markdown,omitempty"`
 }

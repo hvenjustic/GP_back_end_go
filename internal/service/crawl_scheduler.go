@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -130,25 +131,8 @@ func (s *CrawlScheduler) startNew(ctx context.Context) error {
 			maxPages = *item.MaxPages
 		}
 
-		crawlerParams := map[string]any{
-			"include_external":       false,
-			"exclude_external_links": true,
-		}
-		if maxDepth > 0 {
-			crawlerParams["max_depth"] = maxDepth
-		}
-		if maxPages > 0 {
-			crawlerParams["max_pages"] = maxPages
-		}
-		crawlerCfg := map[string]any{
-			"type":   "CrawlerRunConfig",
-			"params": crawlerParams,
-		}
-
-		taskID, err := s.client.EnqueueCrawlJob(ctx, dto.CrawlJobPayload{
-			URLs:          []string{item.URL},
-			CrawlerConfig: crawlerCfg,
-		})
+		payload := s.buildCrawlJobPayload(item, maxDepth, maxPages)
+		taskID, err := s.client.EnqueueCrawlJob(ctx, payload)
 		if err != nil {
 			_ = db.DB.RDB.RPush(ctx, s.queueKey, raw).Err()
 			return err
@@ -323,7 +307,7 @@ func extractMarkdown(job *dto.CrawlJobStatusResponse) (md string, pageCount int)
 	pageCount = len(job.Result.Results)
 
 	var b strings.Builder
-	for _, r := range job.Result.Results {
+	for idx, r := range job.Result.Results {
 		u := strings.TrimSpace(r.URL)
 		if u != "" {
 			b.WriteString("## ")
@@ -331,36 +315,24 @@ func extractMarkdown(job *dto.CrawlJobStatusResponse) (md string, pageCount int)
 			b.WriteString("\n\n")
 		}
 
-		switch v := r.Markdown.(type) {
-		case string:
-			v = strings.TrimSpace(v)
-			if v != "" {
-				b.WriteString(v)
-				if !strings.HasSuffix(v, "\n") {
-					b.WriteString("\n")
-				}
+		content, refs := pickMarkdownContent(r.Markdown)
+		if content != "" {
+			b.WriteString(content)
+			if !strings.HasSuffix(content, "\n") {
 				b.WriteString("\n")
 			}
-		case map[string]any:
-			raw, _ := v["raw_markdown"].(string)
-			raw = strings.TrimSpace(raw)
-			if raw != "" {
-				b.WriteString(raw)
-				if !strings.HasSuffix(raw, "\n") {
-					b.WriteString("\n")
-				}
+			b.WriteString("\n")
+		}
+		if refs != "" {
+			b.WriteString(refs)
+			if !strings.HasSuffix(refs, "\n") {
 				b.WriteString("\n")
 			}
-			refs, _ := v["references_markdown"].(string)
-			refs = strings.TrimSpace(refs)
-			if refs != "" {
-				b.WriteString(refs)
-				if !strings.HasSuffix(refs, "\n") {
-					b.WriteString("\n")
-				}
-				b.WriteString("\n")
-			}
-		default:
+			b.WriteString("\n")
+		}
+		b.WriteString("---")
+		if idx < pageCount-1 {
+			b.WriteString("\n\n")
 		}
 	}
 	return strings.TrimSpace(b.String()), pageCount
@@ -380,4 +352,113 @@ func (s *CrawlScheduler) loadTaskMeta(ctx context.Context, taskKey string) (targ
 		}
 	}
 	return targetID, url, nil
+}
+
+func (s *CrawlScheduler) buildCrawlJobPayload(item QueueItem, maxDepth, maxPages int) dto.CrawlJobPayload {
+	domain := deriveAllowedDomain(item.URL)
+
+	filters := []any{
+		map[string]any{
+			"type": "ContentTypeFilter",
+			"params": map[string]any{
+				"allowed_types": []string{"text/html"},
+			},
+		},
+	}
+	if domain != "" {
+		filters = append([]any{
+			map[string]any{
+				"type": "DomainFilter",
+				"params": map[string]any{
+					"allowed_domains": []string{domain},
+				},
+			},
+		}, filters...)
+	}
+
+	filterChain := map[string]any{
+		"type": "FilterChain",
+		"params": map[string]any{
+			"filters": filters,
+		},
+	}
+
+	deepCrawlStrategy := map[string]any{
+		"type": "BFSDeepCrawlStrategy",
+		"params": map[string]any{
+			"max_depth":        maxDepth,
+			"max_pages":        maxPages,
+			"include_external": false,
+			"filter_chain":     filterChain,
+		},
+	}
+
+	return dto.CrawlJobPayload{
+		URLs: []string{item.URL},
+		BrowserConfig: map[string]any{
+			"headless": true,
+		},
+		CrawlerConfig: map[string]any{
+			"exclude_external_links": true,
+			"deep_crawl_strategy":    deepCrawlStrategy,
+		},
+		ExtractorConfig: map[string]any{
+			"type": "MarkdownExtractor",
+		},
+	}
+}
+
+func deriveAllowedDomain(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	return host
+}
+
+func pickMarkdownContent(md any) (content string, refs string) {
+	switch v := md.(type) {
+	case string:
+		content = strings.TrimSpace(v)
+	case map[string]any:
+		fit := pickString(v, "fit_markdown")
+		raw := pickString(v, "raw_markdown")
+		withCitations := pickString(v, "markdown_with_citations")
+		refs = pickString(v, "references_markdown")
+		content = firstNonEmpty(fit, raw, withCitations)
+	default:
+		// 支持 json.RawMessage 等类型：尝试反序列化为通用 map
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", ""
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			return "", ""
+		}
+		return pickMarkdownContent(m)
+	}
+	return content, refs
+}
+
+func pickString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(items ...string) string {
+	for _, v := range items {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }

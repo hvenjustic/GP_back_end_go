@@ -1,292 +1,317 @@
-# Crawl4AI REST API（以运行中服务 OpenAPI 为准）
-
-本文档以当前线上 Crawl4AI 服务实际暴露的 OpenAPI 为准：
-
-- OpenAPI：`http://43.139.166.203:11235/openapi.json`
-
-> 说明：
-> - **端点路径**与**请求体字段**：以 OpenAPI 为准。
-> - 对于请求体里的 `object` 类型（如 `browser_config` / `crawler_config`）：OpenAPI 只描述为“任意 object”，而 Crawl4AI 的 Python 配置对象在 REST 场景有更严格的序列化约定；这部分以本文档的“配置对象 JSON 序列化规则”说明为准。
-
-## Base URL
-
-* `http://<host>:11235`
-
-## Content-Type
-
-* `Content-Type: application/json`
-
-## 配置对象的 JSON 序列化规则（很重要）
-
-在 REST API 里，`BrowserConfig` / `CrawlerRunConfig` 这类“Python 配置对象”要写成：
-
-* `{"type": "<类名>", "params": { ... }}`
-* 如果 `params` 内部包含 **dict / list** 等复杂类型，通常需要包一层：`{"type": "dict", "value": {...}}` / `{"type":"list","value":[...]}`
+下面是一份**基于你刚才实际跑出来的服务行为**整理的「异步爬取（Job）请求 / 进度查询 / 响应结构体使用说明」Markdown 文档，你可以直接保存成 `crawl4ai_async_job_api.md` 用作在线文档。
 
 ---
 
-## 1) 同步爬取：POST `/crawl`
+````md
+# Crawl4AI Docker 异步 Job API 使用文档（请求 / 进度查询 / 响应结构体）
 
-### 请求
+> 本文档基于你当前服务（`http://43.139.166.203:11235`）的实际调用结果整理：
+> - 提交异步任务：`POST /crawl/job`
+> - 查询任务进度与结果：`GET /crawl/job/{task_id}`
+>
+> 重点：你的服务返回的 Markdown **在** `result.results[i].markdown`（对象），而不是 `extracted_content`。
 
-**Path**
+---
 
-* `POST /crawl`
+## 1. 基本信息
 
-**Body（JSON）**
+### Base URL
+- `http://43.139.166.203:11235`
 
-| 字段               |                               类型 |  必填 | 说明                                                                |
-| ---------------- | -------------------------------: | :-: | ----------------------------------------------------------------- |
-| `urls`           |                       `string[]` |  是  | 要爬取的 URL 列表（单个也用数组）；OpenAPI 限制：`minItems=1`，`maxItems=100` |
-| `browser_config` |                         `object \| null` |  否  | 浏览器层配置（UA、代理、headers、viewport、是否启用 JS 等）；对象序列化规则见上文 |
-| `crawler_config` |                         `object \| null` |  否  | 单次爬取运行配置（缓存、JS 执行、等待策略、抽取、链接过滤、表格抽取等）；对象序列化规则见上文 |
-| `hooks`          |                  `HookConfig \| null` |  否  | 可选 Hook（OpenAPI：`code`/`timeout`），一般用不到可不传 |
+### Content-Type
+- `Content-Type: application/json`
 
-> 注意：如果你**只要“非流式”**，确保 `crawler_config.params.stream = false`（默认就是 false；Self-Hosting Guide 的同步示例也明确写了 `stream: False`）。 
+---
 
-### 你给的配置（整理 + 字段解释）
+## 2. API 列表
 
-你给的是（我保持你的写法），含义如下：
+| 场景 | 方法 | 路径 |
+|---|---|---|
+| 提交异步爬取任务（Job） | POST | `/crawl/job` |
+| 查询任务进度/结果 | GET | `/crawl/job/{task_id}` |
+| 查看服务端 schema（你当前返回的是一个“示例模板”） | GET | `/schema` |
+
+---
+
+## 3. 提交任务：POST `/crawl/job`
+
+### 3.1 请求体（Request Body）结构
+
+你的服务对顶层字段（`urls / browser_config / crawler_config / extractor_config`）支持“直接 JSON 对象”写法；  
+但像 `deep_crawl_strategy / filter_chain` 这种 **策略类字段**必须使用 `type + params` 的结构。
+
+#### 顶层字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `urls` | string[] | ✅ | 起始 URL 列表（深度爬取会从这些起点扩展） |
+| `browser_config` | object | ❌ | 浏览器配置（例如 `headless`） |
+| `crawler_config` | object | ❌ | 爬虫运行配置（深度策略、是否剔除外链、JS 等） |
+| `extractor_config` | object | ❌ | 抽取器配置（你这次用 `MarkdownExtractor`；但 Markdown 实际落在 `markdown` 字段，而非 `extracted_content`） |
+
+---
+
+### 3.2 站点内深度爬取（你现在跑通的标准写法）
+
+下面这个就是你当前“可用且生效”的请求结构（**非流式**、**站点内**、**深度爬取**）：
+
+```bash
+curl -X POST http://43.139.166.203:11235/crawl/job \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": ["https://bio.whu.edu.cn/"],
+    "browser_config": { "headless": true },
+    "crawler_config": {
+      "exclude_external_links": true,
+      "deep_crawl_strategy": {
+        "type": "BFSDeepCrawlStrategy",
+        "params": {
+          "max_depth": 3,
+          "max_pages": 1000,
+          "include_external": false,
+          "filter_chain": {
+            "type": "FilterChain",
+            "params": {
+              "filters": [
+                { "type": "DomainFilter", "params": { "allowed_domains": ["bio.whu.edu.cn"] } },
+                { "type": "ContentTypeFilter", "params": { "allowed_types": ["text/html"] } }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "extractor_config": { "type": "MarkdownExtractor" }
+  }'
+````
+
+#### crawler_config 关键字段说明
+
+| 字段                       | 类型                | 说明                            |
+| ------------------------ | ----------------- | ----------------------------- |
+| `exclude_external_links` | boolean           | 输出时剔除站外链接（减少噪音；不等于“是否跟随外链去爬”） |
+| `deep_crawl_strategy`    | object (Strategy) | 启用深度爬取策略（不配置就只抓 `urls` 里的起始页） |
+
+#### deep_crawl_strategy（BFSDeepCrawlStrategy）参数说明
+
+| 参数                 | 类型                   | 说明                          |
+| ------------------ | -------------------- | --------------------------- |
+| `max_depth`        | number               | 最大爬取深度（从起始 URL 为 0 开始）      |
+| `max_pages`        | number               | 最大页面数上限（防止无限扩展）             |
+| `include_external` | boolean              | 是否允许跟随站外链接（站内爬取应设为 `false`） |
+| `filter_chain`     | object (FilterChain) | 过滤器链，用于限制域名、路径、内容类型等        |
+
+#### filter_chain（FilterChain）说明
+
+FilterChain 的 `filters` 是一个数组，按顺序对候选 URL/资源进行过滤。
+
+你当前用到的两种 Filter：
+
+* `DomainFilter.allowed_domains`
+
+  * 只允许列出的域名
+  * 建议站内爬取一定配，作为“双保险”
+
+* `ContentTypeFilter.allowed_types`
+
+  * 只允许指定内容类型，例如 `text/html`（避免误抓 pdf、图片等二进制资源）
+
+---
+
+### 3.3 提交任务响应（Response）
+
+#### 响应示例
+
+```json
+{ "task_id": "crawl_3959d6f8" }
+```
+
+字段说明：
+
+| 字段        | 类型     | 说明             |
+| --------- | ------ | -------------- |
+| `task_id` | string | 任务 ID，用于后续进度查询 |
+
+---
+
+## 4. 进度查询：GET `/crawl/job/{task_id}`
+
+### 4.1 请求
+
+```bash
+curl -X GET "http://43.139.166.203:11235/crawl/job/<task_id>"
+```
+
+---
+
+### 4.2 响应结构（顶层 Envelope）
+
+你实际返回的顶层结构（已脱敏/简化）类似：
 
 ```json
 {
-  "browser": {
-    "type": "BrowserConfig",
-    "params": {
-      "headers": {
-        "type": "dict",
-        "value": {
-          "sec-ch-ua": "\"Chromium\";v=\"116\", \"Not_A Brand\";v=\"8\", \"Google Chrome\";v=\"116\""
-        }
-      }
-    }
+  "task_id": "crawl_5e3d3a58",
+  "status": "completed",
+  "created_at": "2025-12-19T18:26:13.515650",
+  "url": "[\"https://bio.whu.edu.cn/\"]",
+  "_links": {
+    "self":    { "href": "http://43.139.166.203:11235//llm/crawl_5e3d3a58" },
+    "refresh": { "href": "http://43.139.166.203:11235//llm/crawl_5e3d3a58" }
   },
-  "crawler": {
-    "type": "CrawlerRunConfig",
-    "params": {
-      "scraping_strategy": { "type": "LXMLWebScrapingStrategy", "params": {} },
-      "table_extraction": { "type": "DefaultTableExtraction", "params": {} },
-      "exclude_social_media_domains": [
-        "facebook.com","twitter.com","x.com","linkedin.com","instagram.com",
-        "pinterest.com","tiktok.com","snapchat.com","reddit.com"
-      ]
-    }
+  "result": {
+    "success": true,
+    "results": [ /* CrawlResult[] */ ]
   }
 }
 ```
 
-把它映射到 REST API 的标准字段名，应该是：
+字段说明：
 
-* `browser` → `browser_config`
-* `crawler` → `crawler_config`
-
-各字段含义：
-
-* `browser_config.type = "BrowserConfig"`：表示这是浏览器配置对象。
-* `browser_config.params.headers`：为**每个请求**附加额外 HTTP Header（文档里就叫 `headers: dict`）。你用 `{"type":"dict","value":{...}}` 是符合 REST 序列化习惯的。
-* `crawler_config.params.scraping_strategy = LXMLWebScrapingStrategy`：使用 LXML 做内容抓取/解析（文档里说明 `scraping_strategy` 默认就是 `LXMLWebScrapingStrategy()`，也支持自定义）。
-* `crawler_config.params.table_extraction = DefaultTableExtraction`：启用默认表格抽取策略；一般优先用它（LLM 表格抽取更贵更慢）。
-* `crawler_config.params.exclude_social_media_domains`：扩展/覆盖要剔除的社媒域名列表；文档也给了默认社媒列表（基本与你这份一致）。
-
-### 强 JS（动态站）怎么配（同步也适用）
-
-要“强 JS”，核心是两块：
-
-* 浏览器层：`BrowserConfig.java_script_enabled`（默认 true）
-* 爬取层：`CrawlerRunConfig.js_code` / `wait_for` / `wait_until` / `page_timeout` 等
-
-常用字段（放在 `crawler_config.params`）：
-
-* `wait_until`: `"domcontentloaded"` / `"networkidle"`（控制导航完成条件）
-* `wait_for`: `"css:selector"` 或 `"js:() => boolean"`（等待某个元素/条件出现再抽取）
-* `js_code`: `string | string[]`（页面加载后执行 JS：点击“加载更多”、滚动等）
-* `page_timeout`: 导航/脚本超时（毫秒）
+| 字段           | 类型     | 说明                                                           |
+| ------------ | ------ | ------------------------------------------------------------ |
+| `task_id`    | string | 任务 ID                                                        |
+| `status`     | string | 任务状态（你已见到 `completed`；其它可能是 `queued/processing/failed` 等）    |
+| `created_at` | string | 任务创建时间（ISO 时间戳）                                              |
+| `url`        | string | **注意：你这个服务返回的是“字符串形式的 JSON 数组”**（例如 `"[\\"https://...\\"]"`） |
+| `_links`     | object | 自描述链接（你当前给的是 `//llm/...`，可能用于服务内部或管理界面）                      |
+| `result`     | object | 当 `status=completed` 时提供结果；失败时可能提供错误信息                       |
 
 ---
 
-## 2) 同步响应（Response）
-
-### 2.1 `/crawl` 顶层响应形态
-
-OpenAPI 对响应 schema 标注较少（常见为 `{}`），但实际服务通常会返回以下两种形态（以 README / Self-Hosting Guide 的行为为参考）：
-
-* **若直接完成**：响应 JSON 里会包含 `results`
-* **若未立即完成**：会返回 `task_id`，随后可用 `GET /task/{task_id}` 拉取结果
-
-因此建议你按这两种形态兼容：
-
-**A. 已完成**
+## 5. result 结构体（完成时）
 
 ```json
-{
+"result": {
+  "success": true,
   "results": [ /* CrawlResult[] */ ]
 }
 ```
 
-**B. 返回任务 ID**
+| 字段        | 类型      | 说明                   |
+| --------- | ------- | -------------------- |
+| `success` | boolean | 任务是否整体成功             |
+| `results` | array   | 每个页面一个 `CrawlResult` |
+
+---
+
+## 6. CrawlResult 结构体（你这台服务实际返回的字段集合）
+
+你通过 `jq '.result.results[0] | keys'` 得到的字段如下（每个页面都可能包含这些字段；有些会是 null）：
+
+* `cleaned_html`
+* `console_messages`
+* `dispatch_result`
+* `downloaded_files`
+* `error_message`
+* `extracted_content`
+* `fit_html`
+* `html`
+* `js_execution_result`
+* `links`
+* `markdown`
+* `media`
+* `metadata`
+* `mhtml`
+* `network_requests`
+* `pdf`
+* `redirected_url`
+* `response_headers`
+* `screenshot`
+* `session_id`
+* `ssl_certificate`
+* `status_code`
+* `success`
+* `tables`
+* `url`
+
+### 6.1 最常用字段说明（建议优先看这几个）
+
+| 字段                          | 类型          | 说明                                    |
+| --------------------------- | ----------- | ------------------------------------- |
+| `url`                       | string      | 当前页面 URL                              |
+| `success`                   | boolean     | 当前页抓取是否成功                             |
+| `status_code`               | number/null | HTTP 状态码                              |
+| `error_message`             | string/null | 失败原因                                  |
+| `metadata`                  | object      | 元信息（深度爬取时通常会含 depth/parent 等，具体以返回为准） |
+| `links`                     | object      | 链接集合（internal/external 等）             |
+| `markdown`                  | object      | **MarkdownGenerationResult（重点）**      |
+| `html`                      | string      | 原始 HTML（很大）                           |
+| `cleaned_html` / `fit_html` | string/null | 清洗/适配抽取的 HTML（也很大）                    |
+| `extracted_content`         | any         | 你这次为 `null`（说明没走结构化抽取输出）              |
+
+---
+
+## 7. markdown 字段：MarkdownGenerationResult（你已验证是 object）
+
+你已验证：
+
+* `.markdown | type` 为 `"object"`
+* `.markdown | keys` 为：
 
 ```json
-{
-  "task_id": "string"
-}
+[
+  "fit_html",
+  "fit_markdown",
+  "markdown_with_citations",
+  "raw_markdown",
+  "references_markdown"
+]
 ```
 
-### 2.2 `CrawlResult` 结构体（单页结果）
+字段说明：
 
-`results[]` 的元素是 `CrawlResult`。官方文档给了模型字段（核心字段如下）。
-
-| 字段                  | 类型        | 说明                                                        |                                                                                                 |
-| ------------------- | --------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `url`               | `string`  | 最终 URL（含重定向后的最终地址）               |                                                                                                 |
-| `success`           | `boolean` | 是否成功；失败时看 `error_message`        |                                                                                                 |
-| `status_code`       | `number?` | HTTP 状态码（可能为空）                   |                                                                                                 |
-| `error_message`     | `string?` | 失败原因                             |                                                                                                 |
-| `html`              | `string`  | 原始 HTML                          |                                                                                                 |
-| `cleaned_html`      | `string?` | 清洗后的 HTML（去脚本/样式、按配置剔除标签等）       |                                                                                                 |
-| `fit_html`          | `string?` | “适配抽取”的预处理 HTML                  |                                                                                                 |
-| `markdown`          | `string   | object?`                                                  | Markdown 或 `MarkdownGenerationResult`（可能包含 citations / fit_markdown 等） |
-| `extracted_content` | `string?` | 结构化抽取结果（通常是 JSON 字符串）            |                                                                                                 |
-| `links`             | `object`  | 链接信息（常见分 internal/external）      |                                                                                                 |
-| `media`             | `object`  | 图片/音视频等媒体信息                      |                                                                                                 |
-| `tables`            | `array`   | 表格抽取结果列表（开启 table_extraction 后）  |                                                                                                 |
-| `screenshot`        | `string?` | base64 截图（需配置 `screenshot=true`） |                                                                                                 |
-| `pdf`               | `bytes?`  | PDF（需 `pdf=true`）                |                                                                                                 |
-| `mhtml`             | `string?` | MHTML 快照（需 `capture_mhtml=true`） |                                                                                                 |
-| `response_headers`  | `object?` | 响应头                              |                                                                                                 |
-| `session_id`        | `string?` | 会话 ID（复用浏览器上下文）                  |                                                                                                 |
+| 字段                        | 类型     | 推荐用途                             |
+| ------------------------- | ------ | -------------------------------- |
+| `raw_markdown`            | string | 最“完整”的 Markdown（噪音略多）            |
+| `fit_markdown`            | string | 更偏“正文提取/去噪”的 Markdown（通常更适合做知识库） |
+| `markdown_with_citations` | string | Markdown + 引用编号                  |
+| `references_markdown`     | string | 引用列表（和 citations 对应）             |
+| `fit_html`                | string | 生成 `fit_markdown` 的对应 HTML 片段    |
 
 ---
 
-## 3) 站点内爬取（只在站内走，不出域）
+## 8. 常用 jq 用法（强烈建议）
 
-你要的是两种“站内”概念，分别配置：
+### 8.1 看爬了多少页
 
-### A) **深度爬取（会跟随链接）**：不出域
-
-在深度爬取策略里设置：
-
-* `include_external = false`（不跟随外部域名链接）
-  并可叠加：
-* `DomainFilter.allowed_domains=[...]` 限定允许域名
-
-### B) **单页爬取但想清理外链输出**
-
-在 `CrawlerRunConfig` 里设置：
-
-* `exclude_external_links = true`（把站外链接从结果里移除/剔除）
-
----
-
----
-
-# Crawl4AI REST API（异步 Job Queue）
-
-> 适用：任务队列模式（提交任务 → 轮询状态/取结果），非流式。
-
-## 1) 提交异步任务：POST `/crawl/job`
-
-**Path**
-
-* `POST /crawl/job`
-
-**Body（JSON）**
-字段与同步 `/crawl` 基本一致，并额外支持 webhook（如果你启用）。
-
-| 字段               | 类型 | 必填 | 说明 |
-| ---------------- | ---: | :-: | --- |
-| `urls`           | `string[]` | 是 | 要爬取的 URL 列表（单个也用数组） |
-| `browser_config` | `object` | 否 | 浏览器层配置；对象序列化规则见上文（OpenAPI 默认 `{}`） |
-| `crawler_config` | `object` | 否 | 运行配置；对象序列化规则见上文（OpenAPI 默认 `{}`） |
-| `webhook_config` | `WebhookConfig \| null` | 否 | webhook 通知配置（见下） |
-
-### `WebhookConfig`（OpenAPI）
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | ---: | :-: | --- |
-| `webhook_url` | `string` | 是 | webhook 回调地址（uri） |
-| `webhook_data_in_payload` | `boolean` | 否 | 是否把结果数据放进 payload（默认 `false`） |
-| `webhook_headers` | `object \| null` | 否 | 额外 header（string→string） |
-
-**Response（提交成功）**
-
-```json
-{
-  "task_id": "string",
-  "message": "Task queued successfully."
-}
+```bash
+curl -s "http://43.139.166.203:11235/crawl/job/<task_id>" | jq '.result.results | length'
 ```
 
- 
+### 8.2 列出所有 URL（前 50 条）
 
----
-
-## 2) 查询任务状态 / 获取结果：GET `/crawl/job/{task_id}`
-
-**Path**
-
-* `GET /crawl/job/{task_id}`
-
-**Response（示例：进行中）**
-
-```json
-{
-  "task_id": "string",
-  "status": "queued | running",
-  "message": "Task is in progress."
-}
+```bash
+curl -s "http://43.139.166.203:11235/crawl/job/<task_id>" \
+| jq -r '.result.results[].url' | head -n 50
 ```
 
-**Response（示例：已完成）**
+### 8.3 导出所有页面 fit_markdown 成一个 Markdown 文件
 
-```json
-{
-  "task_id": "string",
-  "status": "completed",
-  "result": { /* CrawlResult 或 CrawlResult[]（取决于你提交的 urls 数量） */ }
-}
+```bash
+curl -s "http://43.139.166.203:11235/crawl/job/<task_id>" \
+| jq -r '
+  .result.results[]
+  | "## " + .url + "\n\n"
+    + (.markdown.fit_markdown // .markdown.raw_markdown // "")
+    + "\n\n---\n"
+' > site-fit.md
 ```
 
-**Response（示例：失败）**
+### 8.4 只看“瘦身后的 JSON”（避免被 html 淹没）
 
-```json
-{
-  "task_id": "string",
-  "status": "failed",
-  "message": "error message"
-}
+```bash
+curl -s "http://43.139.166.203:11235/crawl/job/<task_id>" \
+| jq '
+  {
+    task_id, status, created_at,
+    count: (.result.results | length),
+    results: (.result.results | map({
+      url, success, status_code, error_message,
+      markdown_preview: ((.markdown.fit_markdown // .markdown.raw_markdown // "")[0:200])
+    }))
+  }
+'
 ```
 
-> `status` 与 “完成后返回 result” 的模式来自 Self-Hosting Guide 的 Job Queue 说明。 
-
 ---
 
-## 3) 兼容端点：GET `/task/{task_id}`
-
-有些版本/镜像可能提供不同的兼容端点（README 的 Docker 快速测试示例里出现过）：
-
-* `GET /task/{task_id}` 
-
-如果你在某些版本/镜像里发现 `/crawl/job/{task_id}` 不通、但 `/task/{task_id}` 可用（或相反），建议做兼容分支（客户端侧依次尝试）。
-
----
-
-## 4) 异步结果结构：`result` 是什么？
-
-* 若你提交的是多 URL（`urls: [...]`），最稳妥的处理方式是把 `result` 当成“可能是单个 CrawlResult，也可能是 CrawlResult 列表 / 包装对象”，然后做结构探测。
-* 真正的“单页结果字段”，以官方 `CrawlResult` 为准（见上一个文档的 `CrawlResult` 表）。 
-
----
-
-## 5) 常用配置片段（异步也完全一样）
-
-### 强 JS（动态内容）
-
-* `crawler_config.params.wait_for`
-* `crawler_config.params.js_code`
-* `crawler_config.params.page_timeout`
-
-
-### 站内（不出域/不输出外链）
-
-* 深度爬取：`include_external=false`（在 deep crawl strategy 上） 
-* 清理外链：`exclude_external_links=true`（在 CrawlerRunConfig 上） 
