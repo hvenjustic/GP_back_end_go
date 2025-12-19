@@ -116,10 +116,15 @@ func GetCrawlStatus(ctx context.Context) (dto.StatusResponse, error) {
 	if db.DB.RDB == nil {
 		return dto.StatusResponse{}, ErrRedisUnavailable
 	}
-	pending, err := db.DB.RDB.LLen(ctx, constants.CrawlQueueKey).Result()
+	pendingQueue, err := db.DB.RDB.LLen(ctx, constants.CrawlQueueKey).Result()
 	if err != nil {
 		return dto.StatusResponse{}, err
 	}
+	activeCount, err := db.DB.RDB.SCard(ctx, constants.CrawlActiveSetKey).Result()
+	if err != nil {
+		return dto.StatusResponse{}, err
+	}
+	pending := pendingQueue + activeCount
 	return dto.StatusResponse{
 		Pending:  pending,
 		QueueKey: constants.CrawlQueueKey,
