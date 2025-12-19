@@ -49,17 +49,20 @@ func NewCrawlScheduler() *CrawlScheduler {
 	if config.Config.Crawl4AI.DefaultMaxDepth <= 0 {
 		config.Config.Crawl4AI.DefaultMaxDepth = 2
 	}
+	if config.Config.Crawl4AI.DefaultMaxPages <= 0 {
+		config.Config.Crawl4AI.DefaultMaxPages = 10
+	}
 	if config.Config.Crawl4AI.TimeoutSeconds <= 0 {
 		config.Config.Crawl4AI.TimeoutSeconds = 30
 	}
 	return &CrawlScheduler{
-		queueKey:       defaultQueueKey,
-		activeSetKey:   defaultActiveSetKey,
-		taskKeyPref:    defaultTaskKeyPref,
-		maxConcurrent:  maxConcurrent,
-		pollInterval:   pollInterval,
-		client:         crawl4ai.NewClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds),
-		dao:            mysql.NewCrawlTargetDAO(),
+		queueKey:      defaultQueueKey,
+		activeSetKey:  defaultActiveSetKey,
+		taskKeyPref:   defaultTaskKeyPref,
+		maxConcurrent: maxConcurrent,
+		pollInterval:  pollInterval,
+		client:        crawl4ai.NewClient(config.Config.Crawl4AI.BaseURL, config.Config.Crawl4AI.TimeoutSeconds),
+		dao:           mysql.NewCrawlTargetDAO(),
 	}
 }
 
@@ -92,6 +95,10 @@ func (s *CrawlScheduler) startNew(ctx context.Context) error {
 	if db.DB.RDB == nil {
 		return fmt.Errorf("redis not initialized")
 	}
+	defaultMaxPages := config.Config.Crawl4AI.DefaultMaxPages
+	if defaultMaxPages <= 0 {
+		defaultMaxPages = 10
+	}
 	for {
 		activeCount, err := db.DB.RDB.SCard(ctx, s.activeSetKey).Result()
 		if err != nil {
@@ -119,22 +126,30 @@ func (s *CrawlScheduler) startNew(ctx context.Context) error {
 		if item.MaxDepth != nil && *item.MaxDepth > 0 {
 			maxDepth = *item.MaxDepth
 		}
-		maxPages := 0
+		maxPages := defaultMaxPages
 		if item.MaxPages != nil && *item.MaxPages > 0 {
 			maxPages = *item.MaxPages
 		}
 
-		// 按 api.md 的“站内/不出站”要求：same_domain=true；并启用 exclude_external_links 尽量清理站外链接输出。
-		crawlerCfgFlat := map[string]any{
-			"max_depth":              maxDepth,
-			"max_pages":              maxPages,
-			"same_domain":            true,
-			"exclude_external_links": true,
+		// crawl4ai REST 要求配置对象使用 {"type": "...","params": {...}} 序列化，否则后端会忽略深度/分页参数。
+		crawlerParams := map[string]any{
+			"include_external":       false, // 只站内跟链
+			"exclude_external_links": true,  // 结果里尽量剔除外链
+		}
+		if maxDepth > 0 {
+			crawlerParams["max_depth"] = maxDepth
+		}
+		if maxPages > 0 {
+			crawlerParams["max_pages"] = maxPages
+		}
+		crawlerCfg := map[string]any{
+			"type":   "CrawlerRunConfig",
+			"params": crawlerParams,
 		}
 
 		taskID, err := s.client.EnqueueCrawlJob(ctx, crawl4ai.CrawlJobPayload{
-			URLs:         []string{item.URL},
-			CrawlerConfig: crawlerCfgFlat,
+			URLs:          []string{item.URL},
+			CrawlerConfig: crawlerCfg,
 		})
 		if err != nil {
 			_ = db.DB.RDB.RPush(ctx, s.queueKey, raw).Err()

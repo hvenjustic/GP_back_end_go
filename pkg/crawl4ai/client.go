@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"image-api/pkg/log"
 )
 
 const defaultBaseURL = "http://43.139.166.203:11235"
@@ -54,6 +56,7 @@ func (c *Client) DeepCrawl(ctx context.Context, req DeepCrawlRequest) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
+	log.Info("Crawl4AI", "deepcrawl_request", string(body))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/crawl", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -123,6 +126,7 @@ func (c *Client) EnqueueCrawlJob(ctx context.Context, payload CrawlJobPayload) (
 	if err != nil {
 		return "", err
 	}
+	log.Info("Crawl4AI", "enqueue_job_request", string(body))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/crawl/job", bytes.NewReader(body))
 	if err != nil {
 		return "", err

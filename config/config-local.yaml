@@ -8,6 +8,7 @@ crawl4ai:
   baseUrl: "http://43.139.166.203:11235"
   timeoutSeconds: 3600
   defaultMaxDepth: 3
+  defaultMaxPages: 10
 
 mysql:
   dbMysqlAddress: [ "www.hvenjustic.top:3306" ]

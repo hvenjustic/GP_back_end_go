@@ -40,6 +40,10 @@ func SubmitTasks(c *gin.Context) {
 
 	dao := mysql.NewCrawlTargetDAO()
 	defaultDepth := config.Config.Crawl4AI.DefaultMaxDepth
+	defaultPages := config.Config.Crawl4AI.DefaultMaxPages
+	if defaultPages <= 0 {
+		defaultPages = 10
+	}
 	success := 0
 	failures := 0
 
@@ -78,12 +82,15 @@ func SubmitTasks(c *gin.Context) {
 		if depthVal <= 0 {
 			depthVal = 2
 		}
-		maxPages := 0
+		maxPages := defaultPages
 		if req.MaxPages != nil {
 			maxPages = *req.MaxPages
 		}
 		if item.MaxPages != nil {
 			maxPages = *item.MaxPages
+		}
+		if maxPages <= 0 {
+			maxPages = defaultPages
 		}
 
 		if db.DB.RDB == nil {

@@ -22,6 +22,7 @@ type config struct {
 		BaseURL         string `yaml:"baseUrl"`
 		TimeoutSeconds  int    `yaml:"timeoutSeconds"`
 		DefaultMaxDepth int    `yaml:"defaultMaxDepth"`
+		DefaultMaxPages int    `yaml:"defaultMaxPages"`
 	} `yaml:"crawl4ai"`
 
 	Mysql struct {
