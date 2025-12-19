@@ -1,5 +1,5 @@
 server:
-  defaultPort: 5010
+  defaultPort: 4010
   env: local
   inferencePath: ""
   source: ""
