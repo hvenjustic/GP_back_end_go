@@ -7,7 +7,7 @@ type CrawlTarget struct {
 	ID uint64 `gorm:"column:id;primaryKey;autoIncrement;type:bigint" json:"id"`
 
 	SiteName *string `gorm:"column:site_name;type:varchar(100);index:idx_site_name" json:"site_name"`
-	URL      string `gorm:"column:url;type:varchar(2048);not null;uniqueIndex:uq_url" json:"url"`
+	URL      string  `gorm:"column:url;type:varchar(255);not null;uniqueIndex:uq_url" json:"url"`
 
 	CrawledAt      *time.Time `gorm:"column:crawled_at;index:idx_crawled_at" json:"crawled_at"`
 	LLMProcessedAt *time.Time `gorm:"column:llm_processed_at;index:idx_llm_processed_at" json:"llm_processed_at"`
