@@ -308,15 +308,15 @@ func extractMarkdown(job *dto.CrawlJobStatusResponse) (md string, pageCount int)
 
 	var b strings.Builder
 	for idx, r := range job.Result.Results {
-		raw := pickRawMarkdown(r.Markdown)
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
+		fit := pickFitMarkdown(r.Markdown)
+		fit = strings.TrimSpace(fit)
+		if fit == "" {
 			continue
 		}
 		b.WriteString("# chunk:")
 		b.WriteString(fmt.Sprintf("%d", idx))
 		b.WriteString("\n\n")
-		b.WriteString(raw)
+		b.WriteString(fit)
 		if idx < pageCount-1 {
 			b.WriteString("\n\n")
 		}
@@ -403,11 +403,16 @@ func deriveAllowedDomain(rawURL string) string {
 	return host
 }
 
-func pickRawMarkdown(md any) string {
+func pickFitMarkdown(md any) string {
 	switch v := md.(type) {
 	case string:
 		return strings.TrimSpace(v)
 	case map[string]any:
+		if fit, ok := v["fit_markdown"].(string); ok {
+			if strings.TrimSpace(fit) != "" {
+				return strings.TrimSpace(fit)
+			}
+		}
 		if raw, ok := v["raw_markdown"].(string); ok {
 			return strings.TrimSpace(raw)
 		}
@@ -420,7 +425,10 @@ func pickRawMarkdown(md any) string {
 		if err := json.Unmarshal(b, &m); err != nil {
 			return ""
 		}
-		if raw, ok := m["raw_markdown"].(string); ok {
+		if fit, ok := m["fit_markdown"].(string); ok && strings.TrimSpace(fit) != "" {
+			return strings.TrimSpace(fit)
+		}
+		if raw, ok := m["raw_markdown"].(string); ok && strings.TrimSpace(raw) != "" {
 			return strings.TrimSpace(raw)
 		}
 	}
