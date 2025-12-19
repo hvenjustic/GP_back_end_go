@@ -13,10 +13,10 @@ crawl4ai:
 oss:
   endpoint: "https://oss-cn-beijing.aliyuncs.com"        # 例如 
   bucket: "knowledge-graph-crawl-md"
-  accessKeyId: "<your-access-key-id>"
-  accessKeySecret: "<your-access-key-secret>"
+  accessKeyId: "LTAI5tKC25Lt3zC3fKKg5tTc"
+  accessKeySecret: "hcQCYGinQ1JmeKkiSzMQgxZmrWPJFj"
   useHttps: true
-  prefix: ""                             # 可选：对象键前缀，如 crawl/md
+  prefix: "crawl/md"                             # 可选：对象键前缀，如 crawl/md
 
 mysql:
   dbMysqlAddress: [ "www.hvenjustic.top:3306" ]
