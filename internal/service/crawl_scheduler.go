@@ -256,6 +256,18 @@ func (s *CrawlScheduler) pollActive(ctx context.Context) error {
 			log.Info("CrawlScheduler", "completed", "task_id", taskID, "page_count", pageCount, "md_len", len(md))
 
 		case "failed", "error":
+			errMsg := strings.TrimSpace(job.Message)
+			pageErr := ""
+			if job.Result != nil {
+				for _, r := range job.Result.Results {
+					if e := strings.TrimSpace(r.ErrorMessage); e != "" {
+						pageErr = e
+						break
+					}
+				}
+			}
+			log.Info("CrawlScheduler", "failed detail", "task_id", taskID, "message", errMsg, "page_error", pageErr)
+
 			targetID, urlStr, _ := s.loadTaskMeta(ctx, taskKey)
 			now := time.Now()
 			patch := map[string]any{
