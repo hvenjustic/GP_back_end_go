@@ -11,7 +11,6 @@ import (
 
 	"image-api/internal/mysql"
 	"image-api/models/dto"
-	model "image-api/models/mysql"
 	"image-api/pkg/config"
 	"image-api/pkg/constants"
 	"image-api/pkg/db"
@@ -114,10 +113,11 @@ func SubmitCrawlTasks(ctx context.Context, req dto.SubmitTasksRequest) (dto.Subm
 
 // GetCrawlStatus 获取任务队列状态
 func GetCrawlStatus(ctx context.Context) (dto.StatusResponse, error) {
-	var pending int64
-	if err := db.DB.MysqlDB.DB().Model(&model.CrawlTarget{}).
-		Where("is_crawled = ?", false).
-		Count(&pending).Error; err != nil {
+	if db.DB.RDB == nil {
+		return dto.StatusResponse{}, ErrRedisUnavailable
+	}
+	pending, err := db.DB.RDB.LLen(ctx, constants.CrawlQueueKey).Result()
+	if err != nil {
 		return dto.StatusResponse{}, err
 	}
 	return dto.StatusResponse{
