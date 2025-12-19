@@ -11,7 +11,20 @@ echo "🧱 编译并安装到 ./bin/ ..."
 make install
 
 echo "🔁 通过 PM2 重载应用..."
-pm2 startOrReload ecosystem.config.js
+CONFIG="$PROJECT_DIR/ecosystem.config.js"
+APP_NAME="GP_back_end_go"
+
+if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+  pm2 reload "$CONFIG" || {
+    echo "⚠️  reload 失败，尝试 restart..."
+    pm2 restart "$CONFIG"
+  }
+else
+  pm2 start "$CONFIG"
+fi
+
+echo "当前 PM2 状态："
+pm2 status "$APP_NAME" || true
 
 echo "🎉 Go 后端已重载完成！"
 
