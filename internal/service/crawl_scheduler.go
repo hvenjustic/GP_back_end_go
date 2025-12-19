@@ -308,29 +308,15 @@ func extractMarkdown(job *dto.CrawlJobStatusResponse) (md string, pageCount int)
 
 	var b strings.Builder
 	for idx, r := range job.Result.Results {
-		u := strings.TrimSpace(r.URL)
-		if u != "" {
-			b.WriteString("## ")
-			b.WriteString(u)
-			b.WriteString("\n\n")
+		raw := pickRawMarkdown(r.Markdown)
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
 		}
-
-		content, refs := pickMarkdownContent(r.Markdown)
-		if content != "" {
-			b.WriteString(content)
-			if !strings.HasSuffix(content, "\n") {
-				b.WriteString("\n")
-			}
-			b.WriteString("\n")
-		}
-		if refs != "" {
-			b.WriteString(refs)
-			if !strings.HasSuffix(refs, "\n") {
-				b.WriteString("\n")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString("---")
+		b.WriteString("# chunk:")
+		b.WriteString(fmt.Sprintf("%d", idx))
+		b.WriteString("\n\n")
+		b.WriteString(raw)
 		if idx < pageCount-1 {
 			b.WriteString("\n\n")
 		}
@@ -417,47 +403,25 @@ func deriveAllowedDomain(rawURL string) string {
 	return host
 }
 
-func pickMarkdownContent(md any) (content string, refs string) {
+func pickRawMarkdown(md any) string {
 	switch v := md.(type) {
 	case string:
-		content = strings.TrimSpace(v)
+		return strings.TrimSpace(v)
 	case map[string]any:
-		fit := pickString(v, "fit_markdown")
-		raw := pickString(v, "raw_markdown")
-		withCitations := pickString(v, "markdown_with_citations")
-		refs = pickString(v, "references_markdown")
-		content = firstNonEmpty(fit, raw, withCitations)
+		if raw, ok := v["raw_markdown"].(string); ok {
+			return strings.TrimSpace(raw)
+		}
 	default:
-		// 支持 json.RawMessage 等类型：尝试反序列化为通用 map
 		b, err := json.Marshal(v)
 		if err != nil {
-			return "", ""
+			return ""
 		}
 		var m map[string]any
 		if err := json.Unmarshal(b, &m); err != nil {
-			return "", ""
+			return ""
 		}
-		return pickMarkdownContent(m)
-	}
-	return content, refs
-}
-
-func pickString(m map[string]any, key string) string {
-	if m == nil {
-		return ""
-	}
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return strings.TrimSpace(s)
-		}
-	}
-	return ""
-}
-
-func firstNonEmpty(items ...string) string {
-	for _, v := range items {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
+		if raw, ok := m["raw_markdown"].(string); ok {
+			return strings.TrimSpace(raw)
 		}
 	}
 	return ""
