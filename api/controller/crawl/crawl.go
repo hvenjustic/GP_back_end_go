@@ -123,7 +123,7 @@ func SubmitTasks(c *gin.Context) {
 
 func GetStatus(c *gin.Context) {
 	var pending int64
-	if err := db.DB.MysqlDB.ReadDB().Model(&model.CrawlTarget{}).Where("is_crawled = ?", false).Count(&pending).Error; err != nil {
+	if err := db.DB.MysqlDB.DB().Model(&model.CrawlTarget{}).Where("is_crawled = ?", false).Count(&pending).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

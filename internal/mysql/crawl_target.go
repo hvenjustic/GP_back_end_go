@@ -28,16 +28,16 @@ func (dao *CrawlTargetDAO) UpsertForSubmission(url string, siteName string) (*my
 		siteNamePtr = &siteName
 	}
 	create := mysql.CrawlTarget{
-		URL:      url,
-		SiteName: siteNamePtr,
-		IsCrawled: false,
-		CrawledAt: nil,
+		URL:            url,
+		SiteName:       siteNamePtr,
+		IsCrawled:      false,
+		CrawledAt:      nil,
 		LLMProcessedAt: nil,
-		PageCount:  0,
-		ChunkCount: 0,
-		ResultMD:   nil,
-		GraphJSON:  nil,
-		UpdatedAt:  now,
+		PageCount:      0,
+		ChunkCount:     0,
+		ResultMD:       nil,
+		GraphJSON:      nil,
+		UpdatedAt:      now,
 	}
 
 	updates := map[string]any{
@@ -71,7 +71,7 @@ func (dao *CrawlTargetDAO) UpsertForSubmission(url string, siteName string) (*my
 
 func (dao *CrawlTargetDAO) GetDetailByID(id uint64) (*mysql.CrawlTarget, error) {
 	var out mysql.CrawlTarget
-	if err := db.DB.MysqlDB.ReadDB().Where("id = ?", id).First(&out).Error; err != nil {
+	if err := db.DB.MysqlDB.DB().Where("id = ?", id).First(&out).Error; err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -118,7 +118,7 @@ func (dao *CrawlTargetDAO) ApplyResultByIDOrURL(id *uint64, url string, patch ma
 		return nil, err
 	}
 
-	if err := db.DB.MysqlDB.ReadDB().Where("id = ?", target.ID).First(&target).Error; err != nil {
+	if err := db.DB.MysqlDB.DB().Where("id = ?", target.ID).First(&target).Error; err != nil {
 		return nil, err
 	}
 	return &target, nil
@@ -137,12 +137,12 @@ func (dao *CrawlTargetDAO) List(page int, pageSize int) ([]mysql.CrawlTarget, in
 	offset := (page - 1) * pageSize
 
 	var total int64
-	if err := db.DB.MysqlDB.ReadDB().Model(&mysql.CrawlTarget{}).Count(&total).Error; err != nil {
+	if err := db.DB.MysqlDB.DB().Model(&mysql.CrawlTarget{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	var items []mysql.CrawlTarget
-	err := db.DB.MysqlDB.ReadDB().
+	err := db.DB.MysqlDB.DB().
 		Model(&mysql.CrawlTarget{}).
 		Select("id, site_name, url, crawled_at, llm_processed_at, is_crawled, crawl_count, page_count, chunk_count").
 		Order("updated_at desc").

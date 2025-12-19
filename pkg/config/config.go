@@ -37,16 +37,6 @@ type config struct {
 		DBMaxIdleTime  int      `yaml:"dbMaxIdleTime"`
 		LogLevel       int      `yaml:"logLevel"`
 		SlowThreshold  int      `yaml:"slowThreshold"`
-		// 只读库配置
-		ReadDBAddress      []string `yaml:"readDbMysqlAddress"`
-		ReadDBUserName     string   `yaml:"readDbMysqlUserName"`
-		ReadDBPassword     string   `yaml:"readDbMysqlPassword"`
-		ReadDBDatabaseName string   `yaml:"readDbMysqlDatabaseName"`
-		ReadDBCharSet      string   `yaml:"readDbCharset"`
-		ReadDBMaxOpenConns int      `yaml:"readDbMaxOpenConns"`
-		ReadDBMaxIdleConns int      `yaml:"readDbMaxIdleConns"`
-		ReadDBMaxLifeTime  int      `yaml:"readDbMaxLifeTime"`
-		ReadDBMaxIdleTime  int      `yaml:"readDbMaxIdleTime"`
 	} `yaml:"mysql"`
 
 	Redis struct {

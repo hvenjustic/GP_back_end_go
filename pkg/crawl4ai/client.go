@@ -1,14 +1,13 @@
 package crawl4ai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
+
+	"resty.dev/v3"
 
 	"image-api/pkg/log"
 )
@@ -16,8 +15,8 @@ import (
 const defaultBaseURL = "http://43.139.166.203:11235"
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL string
+	resty   *resty.Client
 }
 
 type DeepCrawlOptions struct {
@@ -39,12 +38,10 @@ func NewClient(baseURL string, timeoutSeconds int) *Client {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 30
 	}
-	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: time.Duration(timeoutSeconds) * time.Second,
-		},
-	}
+	r := resty.New().
+		SetBaseURL(baseURL).
+		SetTimeout(time.Duration(timeoutSeconds) * time.Second)
+	return &Client{baseURL: baseURL, resty: r}
 }
 
 // DeepCrawl 使用 crawl4ai 的 /crawl 同步接口（历史逻辑保留，但项目新流程应使用异步 Job Queue）。
@@ -57,26 +54,18 @@ func (c *Client) DeepCrawl(ctx context.Context, req DeepCrawlRequest) ([]byte, e
 		return nil, err
 	}
 	log.Info("Crawl4AI", "deepcrawl_request", string(body))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/crawl", bytes.NewReader(body))
+	resp, err := c.resty.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(req).
+		Post("/crawl")
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
+	if resp.StatusCode() >= 300 {
+		return nil, fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode(), resp.String())
 	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return respBody, nil
+	return resp.Bytes(), nil
 }
 
 type CrawlJobPayload struct {
@@ -127,26 +116,19 @@ func (c *Client) EnqueueCrawlJob(ctx context.Context, payload CrawlJobPayload) (
 		return "", err
 	}
 	log.Info("Crawl4AI", "enqueue_job_request", string(body))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/crawl/job", bytes.NewReader(body))
+	resp, err := c.resty.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(payload).
+		Post("/crawl/job")
 	if err != nil {
 		return "", err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode, string(respBody))
+	if resp.StatusCode() >= 300 {
+		return "", fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode(), resp.String())
 	}
 
+	respBody := resp.Bytes()
 	var out CrawlJobEnqueueResponse
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return "", err
@@ -183,25 +165,17 @@ func (c *Client) GetCrawlJob(ctx context.Context, taskID string) (*CrawlJobStatu
 }
 
 func (c *Client) getJobOnce(ctx context.Context, url string) (*CrawlJobStatusResponse, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := c.resty.R().
+		SetContext(ctx).
+		Get(url)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode, string(respBody))
+	if resp.StatusCode() >= 300 {
+		return nil, fmt.Errorf("crawl4ai status %d: %s", resp.StatusCode(), resp.String())
 	}
 	var out CrawlJobStatusResponse
-	if err := json.Unmarshal(respBody, &out); err != nil {
+	if err := json.Unmarshal(resp.Bytes(), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -15,7 +15,7 @@ func NewUserApiKeyDAO() *UserApiKeyDAO {
 // GetByApiKey 根据API Key获取记录
 func (dao *UserApiKeyDAO) GetByApiKey(apiKey string) (*mysql.UserApiKey, error) {
 	var userApiKey mysql.UserApiKey
-	err := db.DB.MysqlDB.ReadDB().Where("api_key = ? AND deleted_at IS NULL", apiKey).First(&userApiKey).Error
+	err := db.DB.MysqlDB.DB().Where("api_key = ? AND deleted_at IS NULL", apiKey).First(&userApiKey).Error
 	if err != nil {
 		return nil, err
 	}
