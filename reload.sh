@@ -14,18 +14,23 @@ echo "🔁 通过 PM2 重载应用..."
 CONFIG="$PROJECT_DIR/ecosystem.config.js"
 APP_NAME="GP_back_end_go"
 
-# 检查 PM2 状态，stopped/errored 直接删再 start，online 执行 reload
+# 统一先探测，再决定 reload 或 clean start
 STATUS="$(pm2 describe "$APP_NAME" 2>/dev/null | awk -F: '/ status/{print $2;exit}' | xargs)"
-if [ -z "$STATUS" ]; then
-  echo "ℹ️ 未发现 $APP_NAME，尝试 start ..."
-  pm2 start "$CONFIG"
-elif [ "$STATUS" = "stopped" ] || [ "$STATUS" = "errored" ]; then
-  echo "ℹ️ $APP_NAME 状态为 $STATUS，先 delete 再 start config ..."
-  pm2 delete "$APP_NAME" || true
-  pm2 start "$CONFIG"
-else
-  pm2 reload "$APP_NAME" || pm2 restart "$APP_NAME" || pm2 start "$CONFIG"
-fi
+case "$STATUS" in
+  online)
+    pm2 reload "$APP_NAME" || pm2 restart "$APP_NAME" || { pm2 delete "$APP_NAME" || true; pm2 start "$CONFIG"; }
+    ;;
+  stopped|errored)
+    echo "ℹ️ $APP_NAME 状态为 $STATUS，先 delete 再 start config ..."
+    pm2 delete "$APP_NAME" || true
+    pm2 start "$CONFIG"
+    ;;
+  *)
+    echo "ℹ️ 未发现 $APP_NAME，先清理后 start ..."
+    pm2 delete "$APP_NAME" || true
+    pm2 start "$CONFIG"
+    ;;
+esac
 
 echo "当前 PM2 状态："
 pm2 status "$APP_NAME" || true
