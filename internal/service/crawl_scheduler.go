@@ -179,7 +179,29 @@ func (s *CrawlScheduler) pollActive(ctx context.Context) error {
 
 		job, err := s.client.GetCrawlJob(ctx, taskID)
 		if err != nil {
-			log.Error("CrawlScheduler", "get job failed", err.Error(), "task_id", taskID)
+			errStr := err.Error()
+			log.Error("CrawlScheduler", "get job failed", errStr, "task_id", taskID)
+			// 404 表示任务不存在，视为失败并清理
+			if strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found") {
+				taskKey := s.taskKey(taskID)
+				targetID, urlStr, _ := s.loadTaskMeta(ctx, taskKey)
+				now := time.Now()
+				patch := map[string]any{
+					"updated_at":  now,
+					"crawl_count": gorm.Expr("crawl_count + 1"),
+				}
+				if targetID > 0 {
+					_, _ = s.dao.ApplyResultByIDOrURL(&targetID, "", patch)
+				} else if urlStr != "" {
+					_, _ = s.dao.ApplyResultByIDOrURL(nil, urlStr, patch)
+				}
+				_, _ = db.DB.RDB.Pipelined(ctx, func(p go_redis.Pipeliner) error {
+					p.SRem(ctx, s.activeSetKey, taskID)
+					p.Del(ctx, taskKey)
+					return nil
+				})
+				log.Info("CrawlScheduler", "task not found (404), marked as failed", "task_id", taskID)
+			}
 			continue
 		}
 		if raw, err := json.Marshal(job); err != nil {
