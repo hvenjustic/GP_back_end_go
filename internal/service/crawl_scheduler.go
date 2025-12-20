@@ -397,7 +397,12 @@ func (s *CrawlScheduler) uploadMarkdown(ctx context.Context, baseName string, id
 	}
 	objectKey := fmt.Sprintf("%s_%s.md", baseName, kind)
 	// 即使内容为空也上传，便于对齐索引
-	return s.ossUploader.UploadString(ctx, objectKey, content)
+	url, err := s.ossUploader.UploadString(ctx, objectKey, content)
+	if err != nil {
+		return "", err
+	}
+	log.Info("CrawlScheduler", "upload markdown success", "object_key", objectKey, "kind", kind, "idx", idx, "url", url)
+	return url, nil
 }
 
 func (s *CrawlScheduler) buildCrawlJobPayload(item QueueItem, maxDepth, maxPages int) dto.CrawlJobPayload {
