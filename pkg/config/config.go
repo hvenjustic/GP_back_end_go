@@ -27,6 +27,7 @@ type config struct {
 
 	OSS struct {
 		Endpoint        string `yaml:"endpoint"`
+		Region          string `yaml:"region"`
 		Bucket          string `yaml:"bucket"`
 		AccessKeyID     string `yaml:"accessKeyId"`
 		AccessKeySecret string `yaml:"accessKeySecret"`

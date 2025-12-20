@@ -12,6 +12,7 @@ crawl4ai:
 
 oss:
   endpoint: "https://oss-cn-beijing.aliyuncs.com"        # 例如 
+  region: "cn-beijing"
   bucket: "knowledge-graph-crawl-md"
   accessKeyId: "LTAI5tKC25Lt3zC3fKKg5tTc"
   accessKeySecret: "hcQCYGinQ1JmeKkiSzMQgxZmrWPJFj"
