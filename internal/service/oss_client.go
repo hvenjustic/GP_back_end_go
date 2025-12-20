@@ -28,9 +28,14 @@ func NewOSSUploaderFromConfig() (*OSSUploader, error) {
 	if strings.TrimSpace(ossCfg.Endpoint) == "" || strings.TrimSpace(ossCfg.Bucket) == "" {
 		return nil, fmt.Errorf("oss config missing endpoint/bucket")
 	}
+	region := strings.TrimSpace(ossCfg.Region)
+	if region == "" {
+		return nil, fmt.Errorf("oss config missing region")
+	}
 	cfg := &oss.Config{
 		Endpoint:            oss.Ptr(ossCfg.Endpoint),
 		CredentialsProvider: credentials.NewStaticCredentialsProvider(ossCfg.AccessKeyID, ossCfg.AccessKeySecret),
+		Region:              oss.Ptr(region),
 	}
 	client := oss.NewClient(cfg)
 
