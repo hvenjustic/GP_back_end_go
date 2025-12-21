@@ -20,6 +20,7 @@ func SetRouter(r *gin.Engine) {
 	{
 		apiGroup.POST("/tasks", crawl.SubmitTasks)
 		apiGroup.GET("/tasks/status", crawl.GetStatus)
+		apiGroup.POST("/queues/clear", crawl.ClearQueue)
 		apiGroup.GET("/results", crawl.ListResults)
 		apiGroup.GET("/results/:id", crawl.GetResultDetail)
 	}

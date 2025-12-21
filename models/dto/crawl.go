@@ -30,6 +30,17 @@ type StatusResponse struct {
 	QueueKey string `json:"queue_key"`
 }
 
+// ClearQueueRequest 清空指定队列请求
+type ClearQueueRequest struct {
+	QueueName string `json:"queue_name" binding:"required"`
+}
+
+// ClearQueueResponse 清空指定队列响应
+type ClearQueueResponse struct {
+	QueueName   string `json:"queue_name"`
+	RemovedKeys int64  `json:"removed_keys"`
+}
+
 // TaskResultCallbackRequest Python回传爬虫结果
 type TaskResultCallbackRequest struct {
 	ID  uint64 `json:"id,omitempty"`

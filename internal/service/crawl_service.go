@@ -131,6 +131,24 @@ func GetCrawlStatus(ctx context.Context) (dto.StatusResponse, error) {
 	}, nil
 }
 
+// ClearQueue 清空指定的 Redis 队列/集合
+func ClearQueue(ctx context.Context, queueName string) (dto.ClearQueueResponse, error) {
+	if queueName == "" {
+		return dto.ClearQueueResponse{}, fmt.Errorf("%w: queue_name empty", ErrBadRequest)
+	}
+	if db.DB.RDB == nil {
+		return dto.ClearQueueResponse{}, ErrRedisUnavailable
+	}
+	removed, err := db.DB.RDB.Del(ctx, queueName).Result()
+	if err != nil {
+		return dto.ClearQueueResponse{}, err
+	}
+	return dto.ClearQueueResponse{
+		QueueName:   queueName,
+		RemovedKeys: removed,
+	}, nil
+}
+
 // ApplyTaskResult 处理爬虫结果回传
 func ApplyTaskResult(ctx context.Context, req dto.TaskResultCallbackRequest) (dto.TaskResultResponse, error) {
 	req.URL = strings.TrimSpace(req.URL)
