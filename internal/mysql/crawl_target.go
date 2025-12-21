@@ -145,7 +145,7 @@ func (dao *CrawlTargetDAO) List(page int, pageSize int) ([]mysql.CrawlTarget, in
 	err := db.DB.MysqlDB.DB().
 		Model(&mysql.CrawlTarget{}).
 		Select("id, site_name, url, crawled_at, llm_processed_at, is_crawled, crawl_count, page_count, chunk_count").
-		Order("updated_at desc").
+		Order("id desc").
 		Limit(pageSize).
 		Offset(offset).
 		Find(&items).Error

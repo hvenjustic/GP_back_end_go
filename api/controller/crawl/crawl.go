@@ -44,6 +44,24 @@ func GetStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func ClearQueue(c *gin.Context) {
+	var req dto.ClearQueueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: err.Error(), Code: http.StatusBadRequest})
+		return
+	}
+	resp, err := service.ClearQueue(c.Request.Context(), req.QueueName)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrBadRequest) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, dto.ErrorResponse{Error: err.Error(), Code: status})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 func PostTaskResult(c *gin.Context) {
 	var req dto.TaskResultCallbackRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
