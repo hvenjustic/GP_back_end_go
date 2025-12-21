@@ -3,7 +3,7 @@ package middleware
 import (
 	"time"
 
-	"image-api/pkg/log"
+	"GP_back_end_go/pkg/log"
 
 	"github.com/gin-gonic/gin"
 )

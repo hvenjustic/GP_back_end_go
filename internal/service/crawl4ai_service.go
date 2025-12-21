@@ -9,9 +9,9 @@ import (
 
 	"resty.dev/v3"
 
-	"image-api/models/dto"
-	"image-api/pkg/constants"
-	"image-api/pkg/log"
+	"GP_back_end_go/models/dto"
+	"GP_back_end_go/pkg/constants"
+	"GP_back_end_go/pkg/log"
 )
 
 type Crawl4AIClient struct {

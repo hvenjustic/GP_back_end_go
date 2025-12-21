@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"image-api/pkg/config"
-	"image-api/pkg/log"
-	"image-api/pkg/utils"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/log"
+	"GP_back_end_go/pkg/utils"
 
 	go_redis "github.com/go-redis/redis/v8"
 )

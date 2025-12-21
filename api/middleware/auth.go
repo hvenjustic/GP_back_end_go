@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"image-api/internal/mysql"
-	"image-api/pkg/log"
+	"GP_back_end_go/internal/mysql"
+	"GP_back_end_go/pkg/log"
 
 	"github.com/gin-gonic/gin"
 )

@@ -3,7 +3,7 @@ package health
 import (
 	"net/http"
 
-	"image-api/models/dto"
+	"GP_back_end_go/models/dto"
 
 	"github.com/gin-gonic/gin"
 )

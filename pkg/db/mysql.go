@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"image-api/pkg/config"
-	"image-api/pkg/log"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/log"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"

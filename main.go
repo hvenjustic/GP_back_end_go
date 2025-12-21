@@ -6,11 +6,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"image-api/api"
-	"image-api/internal/service"
-	"image-api/pkg/config"
-	"image-api/pkg/db"
-	"image-api/pkg/log"
+	"GP_back_end_go/api"
+	"GP_back_end_go/internal/service"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/db"
+	"GP_back_end_go/pkg/log"
 )
 
 var configFile = flag.String("f", "config/config-local.yaml", "the config file")

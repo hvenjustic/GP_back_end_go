@@ -1,6 +1,6 @@
 package dto
 
-import "image-api/models/mysql"
+import "GP_back_end_go/models/mysql"
 
 // SubmitTaskItem 单个爬取任务参数
 type SubmitTaskItem struct {

@@ -3,13 +3,13 @@ package api
 import (
 	"fmt"
 
+	"GP_back_end_go/api/middleware"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/log"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"image-api/api/middleware"
-	"image-api/pkg/config"
-	"image-api/pkg/log"
 )
 
 func Run() {

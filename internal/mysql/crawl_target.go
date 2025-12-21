@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"image-api/models/mysql"
-	"image-api/pkg/db"
+	"GP_back_end_go/models/mysql"
+	"GP_back_end_go/pkg/db"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

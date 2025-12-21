@@ -1,8 +1,8 @@
 package db
 
 import (
-	"image-api/models/mysql"
-	"image-api/pkg/log"
+	"GP_back_end_go/models/mysql"
+	"GP_back_end_go/pkg/log"
 )
 
 func migrateMysqlSchemas() {
@@ -14,4 +14,3 @@ func migrateMysqlSchemas() {
 		panic(err.Error())
 	}
 }
-
