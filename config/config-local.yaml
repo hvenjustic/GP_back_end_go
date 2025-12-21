@@ -5,7 +5,7 @@ server:
   source: ""
 
 crawl4ai:
-  baseUrl: "http://43.139.166.203:11235"
+  baseUrl: "http://10.138.19.107:11235"
   timeoutSeconds: 3600
   defaultMaxDepth: 3
   defaultMaxPages: 10
