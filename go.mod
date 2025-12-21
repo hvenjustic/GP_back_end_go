@@ -1,4 +1,4 @@
-module image-api
+module GP_back_end_go
 
 go 1.23.1
 

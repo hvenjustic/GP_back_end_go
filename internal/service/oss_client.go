@@ -10,8 +10,8 @@ import (
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss/credentials"
 
-	"image-api/pkg/config"
-	"image-api/pkg/log"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/log"
 )
 
 // OSSUploader 负责将字符串内容上传到阿里云 OSS。

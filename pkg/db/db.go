@@ -1,7 +1,7 @@
 package db
 
 import (
-	"image-api/pkg/log"
+	"GP_back_end_go/pkg/log"
 
 	go_redis "github.com/go-redis/redis/v8"
 	"github.com/patrickmn/go-cache"

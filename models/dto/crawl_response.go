@@ -1,6 +1,6 @@
 package dto
 
-import "image-api/models/mysql"
+import "GP_back_end_go/models/mysql"
 
 // CrawlResultDetailResponse 单条结果详情响应
 type CrawlResultDetailResponse struct {

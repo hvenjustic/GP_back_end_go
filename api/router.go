@@ -1,9 +1,9 @@
 package api
 
 import (
-	"image-api/api/controller/health"
-	"image-api/api/controller/crawl"
-	"image-api/api/middleware"
+	"GP_back_end_go/api/controller/crawl"
+	"GP_back_end_go/api/controller/health"
+	"GP_back_end_go/api/middleware"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"

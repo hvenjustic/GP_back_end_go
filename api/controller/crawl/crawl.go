@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"image-api/internal/service"
-	"image-api/models/dto"
+	"GP_back_end_go/internal/service"
+	"GP_back_end_go/models/dto"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

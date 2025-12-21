@@ -1,8 +1,8 @@
 package mysql
 
 import (
-	"image-api/models/mysql"
-	"image-api/pkg/db"
+	"GP_back_end_go/models/mysql"
+	"GP_back_end_go/pkg/db"
 	"time"
 )
 

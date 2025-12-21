@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"image-api/internal/mysql"
-	"image-api/models/dto"
-	"image-api/pkg/config"
-	"image-api/pkg/constants"
-	"image-api/pkg/db"
-	"image-api/pkg/log"
+	"GP_back_end_go/internal/mysql"
+	"GP_back_end_go/models/dto"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/constants"
+	"GP_back_end_go/pkg/db"
+	"GP_back_end_go/pkg/log"
 
 	go_redis "github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
