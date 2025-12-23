@@ -211,7 +211,9 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 
 		var next map[string]any
 		if err := json.Unmarshal([]byte(respText), &next); err != nil {
-			return dto.GraphBuildResponse{}, fmt.Errorf("解析 llm 抽取结果失败: %w", err)
+			snippet := truncateResp(respText, 200)
+			log.Error("GraphLLM", "unmarshal_failed", err.Error(), "resp_snippet", snippet)
+			return dto.GraphBuildResponse{}, fmt.Errorf("%w: 解析 llm 抽取结果失败，响应片段=%s", ErrBadRequest, snippet)
 		}
 		currentJSON = next
 		log.Info("GraphLLM", "batch_ok", "batch_start", i, "batch_end", end, "resp_len", len(respText))
@@ -321,4 +323,11 @@ func appendChunk(list []string, lines []string) []string {
 		list = append(list, text)
 	}
 	return list
+}
+
+func truncateResp(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
