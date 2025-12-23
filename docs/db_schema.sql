@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS crawl_targets (
   -- 页面结果维度的数据（站点记录通常为空）
   chunk_count INT NOT NULL DEFAULT 0 COMMENT '内容分块数量（用于分段/向量化等）',
   result_md LONGTEXT NULL COMMENT '抓取到的 Markdown 结果内容（页面为主，可为空）',
+  processed_md LONGTEXT NULL COMMENT 'LLM 预处理后的 Markdown（合并文件的 URL）',
   graph_json LONGTEXT NULL COMMENT '从内容抽取的图谱 JSON（可为空）',
 
   -- 处理耗时（毫秒）

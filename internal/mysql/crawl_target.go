@@ -36,6 +36,7 @@ func (dao *CrawlTargetDAO) UpsertForSubmission(url string, siteName string) (*my
 		PageCount:      0,
 		ChunkCount:     0,
 		ResultMD:       nil,
+		ProcessedMD:    nil,
 		GraphJSON:      nil,
 		UpdatedAt:      now,
 	}
@@ -48,6 +49,7 @@ func (dao *CrawlTargetDAO) UpsertForSubmission(url string, siteName string) (*my
 		"page_count":       0,
 		"chunk_count":      0,
 		"result_md":        nil,
+		"processed_md":     nil,
 		"graph_json":       nil,
 		"updated_at":       now,
 	}

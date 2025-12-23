@@ -16,9 +16,10 @@ type CrawlTarget struct {
 	CrawlCount int  `gorm:"column:crawl_count;not null;default:0" json:"crawl_count"`
 	PageCount  int  `gorm:"column:page_count;not null;default:0" json:"page_count"`
 
-	ChunkCount int     `gorm:"column:chunk_count;not null;default:0" json:"chunk_count"`
-	ResultMD   *string `gorm:"column:result_md;type:longtext" json:"result_md"`
-	GraphJSON  *string `gorm:"column:graph_json;type:longtext" json:"graph_json"`
+	ChunkCount  int     `gorm:"column:chunk_count;not null;default:0" json:"chunk_count"`
+	ResultMD    *string `gorm:"column:result_md;type:longtext" json:"result_md"`
+	ProcessedMD *string `gorm:"column:processed_md;type:longtext" json:"processed_md"`
+	GraphJSON   *string `gorm:"column:graph_json;type:longtext" json:"graph_json"`
 
 	// 额外：按需求保留耗时（毫秒），前端列表暂不展示
 	CrawlDurationMs int64 `gorm:"column:crawl_duration_ms;not null;default:0" json:"crawl_duration_ms"`
