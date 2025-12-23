@@ -74,8 +74,10 @@ type config struct {
 	EntityExtractionLLM LLMConfig `yaml:"entity_extraction_llm"`
 
 	Prompts struct {
-		PreprocessPath string `yaml:"preprocess_path"`
-		EntityPath     string `yaml:"entity_path"`
+		PreprocessPath   string `yaml:"preprocess_path"`
+		EntityPath       string `yaml:"entity_path"`
+		PreprocessInline string `yaml:"preprocess_inline"`
+		EntityInline     string `yaml:"entity_inline"`
 	} `yaml:"prompts"`
 }
 

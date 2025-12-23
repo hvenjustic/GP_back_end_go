@@ -11,6 +11,7 @@ import (
 	"resty.dev/v3"
 
 	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/log"
 )
 
 // ChatLLMClient 统一的 Chat Completions 客户端
@@ -65,9 +66,11 @@ func (c *ChatLLMClient) Chat(ctx context.Context, content string) (string, error
 
 	resp, err := req.Post(endpoint)
 	if err != nil {
+		log.Error("LLM", "request_failed", err.Error(), "endpoint", endpoint, "model", c.model)
 		return "", err
 	}
 	if resp.StatusCode() >= 300 {
+		log.Error("LLM", "status_not_ok", fmt.Sprintf("%d", resp.StatusCode()), "endpoint", endpoint, "model", c.model, "resp", resp.String())
 		return "", fmt.Errorf("llm status %d: %s", resp.StatusCode(), resp.String())
 	}
 
@@ -86,6 +89,7 @@ func (c *ChatLLMClient) Chat(ctx context.Context, content string) (string, error
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal([]byte(bodyText), &out); err != nil {
+		log.Error("LLM", "unmarshal_failed", err.Error(), "endpoint", endpoint, "model", c.model, "body", truncate(bodyText, 200))
 		return "", err
 	}
 	if len(out.Choices) == 0 {
@@ -97,6 +101,7 @@ func (c *ChatLLMClient) Chat(ctx context.Context, content string) (string, error
 	if text == "" {
 		return "", fmt.Errorf("llm response content empty")
 	}
+	log.Info("LLM", "chat_success", "endpoint", endpoint, "model", c.model, "resp_len", len(text))
 	return text, nil
 }
 
@@ -112,4 +117,11 @@ func stripCodeFence(text string) string {
 		}
 	}
 	return strings.TrimSpace(t)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

@@ -63,7 +63,7 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 		return dto.PreprocessResponse{}, fmt.Errorf("%w: fit_markdown 为空，无法预处理", ErrBadRequest)
 	}
 
-	prompt, err := loadPromptSection(config.Config.Prompts.PreprocessPath, "## 网页预处理提示词")
+	prompt, err := loadPrompt(config.Config.Prompts.PreprocessInline, config.Config.Prompts.PreprocessPath, "## 网页预处理提示词")
 	if err != nil {
 		return dto.PreprocessResponse{}, err
 	}
@@ -108,6 +108,7 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 		}
 		section := fmt.Sprintf("# chunk%d\n%s", idx, body)
 		sections = append(sections, section)
+		log.Info("PreprocessLLM", "chunk_ok", "chunk_idx", idx, "url", link, "body_len", len(body))
 	}
 
 	if len(sections) == 0 {
@@ -165,7 +166,7 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 		return dto.GraphBuildResponse{}, fmt.Errorf("%w: processed_md 未包含 chunk 内容", ErrBadRequest)
 	}
 
-	prompt, err := loadPromptSection(config.Config.Prompts.EntityPath, "## 实体识别提取提示词")
+	prompt, err := loadPrompt(config.Config.Prompts.EntityInline, config.Config.Prompts.EntityPath, "## 实体识别提取提示词")
 	if err != nil {
 		return dto.GraphBuildResponse{}, err
 	}
@@ -213,6 +214,7 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 			return dto.GraphBuildResponse{}, fmt.Errorf("解析 llm 抽取结果失败: %w", err)
 		}
 		currentJSON = next
+		log.Info("GraphLLM", "batch_ok", "batch_start", i, "batch_end", end, "resp_len", len(respText))
 	}
 
 	graph := utils.StructToJsonString(currentJSON)
@@ -266,7 +268,10 @@ func downloadText(ctx context.Context, url string) (string, error) {
 	return string(b), nil
 }
 
-func loadPromptSection(path string, marker string) (string, error) {
+func loadPrompt(inline string, path string, marker string) (string, error) {
+	if text := strings.TrimSpace(inline); text != "" {
+		return text, nil
+	}
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("prompt path empty")
 	}
