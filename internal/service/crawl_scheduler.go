@@ -478,9 +478,6 @@ func pickFitMarkdown(md any) string {
 				return strings.TrimSpace(fit)
 			}
 		}
-		if raw, ok := v["raw_markdown"].(string); ok {
-			return strings.TrimSpace(raw)
-		}
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {
@@ -492,9 +489,6 @@ func pickFitMarkdown(md any) string {
 		}
 		if fit, ok := m["fit_markdown"].(string); ok && strings.TrimSpace(fit) != "" {
 			return strings.TrimSpace(fit)
-		}
-		if raw, ok := m["raw_markdown"].(string); ok && strings.TrimSpace(raw) != "" {
-			return strings.TrimSpace(raw)
 		}
 	}
 	return ""
