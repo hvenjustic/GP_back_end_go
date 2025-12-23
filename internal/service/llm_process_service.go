@@ -1,0 +1,319 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"resty.dev/v3"
+
+	"GP_back_end_go/internal/mysql"
+	"GP_back_end_go/models/dto"
+	"GP_back_end_go/pkg/config"
+	"GP_back_end_go/pkg/log"
+	"GP_back_end_go/pkg/utils"
+)
+
+type markdownStore struct {
+	Nums                 int      `json:"nums"`
+	RawMarkdown          []string `json:"raw_markdown"`
+	FitMarkdown          []string `json:"fit_markdown"`
+	MarkdownWithCitation []string `json:"markdown_with_citations"`
+}
+
+type preprocessLLMResp struct {
+	HasRelevantInfo bool            `json:"has_relevant_info"`
+	Body            json.RawMessage `json:"body"`
+	Reason          string          `json:"reason"`
+}
+
+func (r preprocessLLMResp) bodyText() string {
+	raw := strings.TrimSpace(string(r.Body))
+	if raw == "" || raw == "{}" {
+		return ""
+	}
+	var asStr string
+	if err := json.Unmarshal(r.Body, &asStr); err == nil {
+		return strings.TrimSpace(asStr)
+	}
+	return raw
+}
+
+// RunPreprocessLLM 下载 fit markdown，调用 LLM 过滤并上传合并文件。
+func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, error) {
+	if id == 0 {
+		return dto.PreprocessResponse{}, fmt.Errorf("%w: id invalid", ErrBadRequest)
+	}
+
+	dao := mysql.NewCrawlTargetDAO()
+	record, err := dao.GetDetailByID(id)
+	if err != nil {
+		return dto.PreprocessResponse{}, err
+	}
+	store, err := parseMarkdownStore(record.ResultMD)
+	if err != nil {
+		return dto.PreprocessResponse{}, err
+	}
+	if len(store.FitMarkdown) == 0 {
+		return dto.PreprocessResponse{}, fmt.Errorf("%w: fit_markdown 为空，无法预处理", ErrBadRequest)
+	}
+
+	prompt, err := loadPromptSection(config.Config.Prompts.PreprocessPath, "## 网页预处理提示词")
+	if err != nil {
+		return dto.PreprocessResponse{}, err
+	}
+
+	llm := NewChatLLMClient(config.Config.PagePreprocessLLM)
+	if llm == nil {
+		return dto.PreprocessResponse{}, fmt.Errorf("llm client not initialized")
+	}
+
+	start := time.Now()
+	var sections []string
+
+	for idx, link := range store.FitMarkdown {
+		text, err := downloadText(ctx, link)
+		if err != nil {
+			log.Error("PreprocessLLM", "download failed", err.Error(), "url", link)
+			continue
+		}
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+
+		promptText := strings.ReplaceAll(prompt, "{{text_block}}", text)
+		respText, err := llm.Chat(ctx, promptText)
+		if err != nil {
+			log.Error("PreprocessLLM", "llm call failed", err.Error(), "url", link)
+			continue
+		}
+
+		respText = stripCodeFence(respText)
+		var parsed preprocessLLMResp
+		if err := json.Unmarshal([]byte(respText), &parsed); err != nil {
+			log.Error("PreprocessLLM", "parse llm resp failed", err.Error(), "raw", respText)
+			continue
+		}
+		body := strings.TrimSpace(parsed.bodyText())
+		if body == "" {
+			if !parsed.HasRelevantInfo {
+				continue
+			}
+			body = respText
+		}
+		section := fmt.Sprintf("# chunk%d\n%s", idx, body)
+		sections = append(sections, section)
+	}
+
+	if len(sections) == 0 {
+		return dto.PreprocessResponse{}, fmt.Errorf("无可用预处理内容，处理失败")
+	}
+
+	merged := strings.Join(sections, "\n\n")
+	uploader := InitOSSUploader()
+	if uploader == nil {
+		return dto.PreprocessResponse{}, fmt.Errorf("oss uploader init failed")
+	}
+	objectKey := fmt.Sprintf("processed/%s-%d-%d.md", SafeObjectKeyFromURL(record.URL, int(record.ID)), record.ID, time.Now().Unix())
+	url, err := uploader.UploadString(ctx, objectKey, merged)
+	if err != nil {
+		return dto.PreprocessResponse{}, err
+	}
+
+	duration := time.Since(start).Milliseconds()
+	patch := map[string]any{
+		"processed_md":     url,
+		"llm_processed_at": time.Now(),
+		"llm_duration_ms":  duration,
+	}
+	if _, err := dao.ApplyResultByIDOrURL(&id, "", patch); err != nil {
+		return dto.PreprocessResponse{}, err
+	}
+
+	return dto.PreprocessResponse{
+		Status:        "ok",
+		ProcessedMD:   url,
+		LLMDurationMs: duration,
+	}, nil
+}
+
+// BuildGraphFromProcessed 读取 processed_md，按 3 个 chunk 一轮调用 LLM，最终写入 graph_json。
+func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResponse, error) {
+	if id == 0 {
+		return dto.GraphBuildResponse{}, fmt.Errorf("%w: id invalid", ErrBadRequest)
+	}
+	dao := mysql.NewCrawlTargetDAO()
+	record, err := dao.GetDetailByID(id)
+	if err != nil {
+		return dto.GraphBuildResponse{}, err
+	}
+	if record.ProcessedMD == nil || strings.TrimSpace(*record.ProcessedMD) == "" {
+		return dto.GraphBuildResponse{}, fmt.Errorf("%w: processed_md 为空，请先完成预处理", ErrBadRequest)
+	}
+
+	content, err := downloadText(ctx, *record.ProcessedMD)
+	if err != nil {
+		return dto.GraphBuildResponse{}, fmt.Errorf("下载 processed_md 失败: %w", err)
+	}
+	chunks := splitChunks(content)
+	if len(chunks) == 0 {
+		return dto.GraphBuildResponse{}, fmt.Errorf("%w: processed_md 未包含 chunk 内容", ErrBadRequest)
+	}
+
+	prompt, err := loadPromptSection(config.Config.Prompts.EntityPath, "## 实体识别提取提示词")
+	if err != nil {
+		return dto.GraphBuildResponse{}, err
+	}
+
+	llm := NewChatLLMClient(config.Config.EntityExtractionLLM)
+	if llm == nil {
+		return dto.GraphBuildResponse{}, fmt.Errorf("llm client not initialized")
+	}
+
+	currentJSON := map[string]any{
+		"entities":  []any{},
+		"relations": []any{},
+	}
+	if record.GraphJSON != nil && strings.TrimSpace(*record.GraphJSON) != "" {
+		var tmp map[string]any
+		if err := json.Unmarshal([]byte(*record.GraphJSON), &tmp); err == nil {
+			currentJSON = tmp
+		}
+	}
+	if _, ok := currentJSON["entities"]; !ok {
+		currentJSON["entities"] = []any{}
+	}
+	if _, ok := currentJSON["relations"]; !ok {
+		currentJSON["relations"] = []any{}
+	}
+
+	start := time.Now()
+	for i := 0; i < len(chunks); i += 3 {
+		end := i + 3
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		batch := strings.Join(chunks[i:end], "\n\n")
+		promptText := strings.ReplaceAll(prompt, "{{markdown}}", batch)
+		promptText = strings.ReplaceAll(promptText, "{{oldjson}}", utils.StructToJsonString(currentJSON))
+
+		respText, err := llm.Chat(ctx, promptText)
+		if err != nil {
+			return dto.GraphBuildResponse{}, fmt.Errorf("llm 抽取失败：%w", err)
+		}
+		respText = stripCodeFence(respText)
+
+		var next map[string]any
+		if err := json.Unmarshal([]byte(respText), &next); err != nil {
+			return dto.GraphBuildResponse{}, fmt.Errorf("解析 llm 抽取结果失败: %w", err)
+		}
+		currentJSON = next
+	}
+
+	graph := utils.StructToJsonString(currentJSON)
+	duration := time.Since(start).Milliseconds()
+	patch := map[string]any{
+		"graph_json":       graph,
+		"llm_processed_at": time.Now(),
+		"llm_duration_ms":  duration,
+	}
+	if _, err := dao.ApplyResultByIDOrURL(&id, "", patch); err != nil {
+		return dto.GraphBuildResponse{}, err
+	}
+
+	return dto.GraphBuildResponse{
+		Status:        "ok",
+		GraphJSON:     graph,
+		LLMDurationMs: duration,
+	}, nil
+}
+
+func parseMarkdownStore(raw *string) (*markdownStore, error) {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return nil, fmt.Errorf("%w: result_md 为空", ErrBadRequest)
+	}
+	var store markdownStore
+	if err := json.Unmarshal([]byte(*raw), &store); err != nil {
+		return nil, fmt.Errorf("%w: 解析 result_md 失败: %v", ErrBadRequest, err)
+	}
+	return &store, nil
+}
+
+func downloadText(ctx context.Context, url string) (string, error) {
+	client := resty.New().SetTimeout(60 * time.Second)
+	resp, err := client.R().SetContext(ctx).Get(url)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() >= 300 {
+		return "", fmt.Errorf("download status %d: %s", resp.StatusCode(), resp.String())
+	}
+	if text := resp.String(); text != "" {
+		return text, nil
+	}
+	if resp.Body == nil {
+		return "", fmt.Errorf("download body empty")
+	}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func loadPromptSection(path string, marker string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("prompt path empty")
+	}
+	abs, _ := filepath.Abs(path)
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return "", err
+	}
+	content := string(b)
+	if marker == "" {
+		return strings.TrimSpace(content), nil
+	}
+	idx := strings.Index(content, marker)
+	if idx < 0 {
+		log.Error("Prompt", "marker not found", marker, "path", abs)
+		return strings.TrimSpace(content), nil
+	}
+	section := content[idx+len(marker):]
+	nextIdx := strings.Index(section, "## ")
+	if nextIdx >= 0 {
+		section = section[:nextIdx]
+	}
+	return strings.TrimSpace(section), nil
+}
+
+func splitChunks(content string) []string {
+	lines := strings.Split(content, "\n")
+	var chunks []string
+	var current []string
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "# chunk") && len(current) > 0 {
+			chunks = appendChunk(chunks, current)
+			current = []string{line}
+			continue
+		}
+		current = append(current, line)
+	}
+	if len(current) > 0 {
+		chunks = appendChunk(chunks, current)
+	}
+	return chunks
+}
+
+func appendChunk(list []string, lines []string) []string {
+	text := strings.TrimSpace(strings.Join(lines, "\n"))
+	if text != "" {
+		list = append(list, text)
+	}
+	return list
+}

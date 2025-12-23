@@ -119,3 +119,41 @@ func GetResultDetail(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+func PreprocessResult(c *gin.Context) {
+	var req dto.IDRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.ID == 0 {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "id is required", Code: http.StatusBadRequest})
+		return
+	}
+
+	resp, err := service.RunPreprocessLLM(c.Request.Context(), req.ID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrBadRequest) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, dto.ErrorResponse{Error: err.Error(), Code: status})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func BuildGraph(c *gin.Context) {
+	var req dto.IDRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.ID == 0 {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "id is required", Code: http.StatusBadRequest})
+		return
+	}
+
+	resp, err := service.BuildGraphFromProcessed(c.Request.Context(), req.ID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrBadRequest) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, dto.ErrorResponse{Error: err.Error(), Code: status})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}

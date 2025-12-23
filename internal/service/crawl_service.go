@@ -199,6 +199,9 @@ func ApplyTaskResult(ctx context.Context, req dto.TaskResultCallbackRequest) (dt
 	if req.ResultMD != nil {
 		patch["result_md"] = *req.ResultMD
 	}
+	if req.ProcessedMD != nil {
+		patch["processed_md"] = *req.ProcessedMD
+	}
 	if req.GraphJSON != nil {
 		patch["graph_json"] = *req.GraphJSON
 	}

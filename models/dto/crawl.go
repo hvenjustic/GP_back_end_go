@@ -55,8 +55,9 @@ type TaskResultCallbackRequest struct {
 	PageCount  *int  `json:"page_count,omitempty"`
 	ChunkCount *int  `json:"chunk_count,omitempty"`
 
-	ResultMD  *string `json:"result_md,omitempty"`
-	GraphJSON *string `json:"graph_json,omitempty"`
+	ResultMD    *string `json:"result_md,omitempty"`
+	ProcessedMD *string `json:"processed_md,omitempty"`
+	GraphJSON   *string `json:"graph_json,omitempty"`
 
 	CrawlDurationMs *int64 `json:"crawl_duration_ms,omitempty"`
 	LLMDurationMs   *int64 `json:"llm_duration_ms,omitempty"`

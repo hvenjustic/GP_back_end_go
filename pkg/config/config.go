@@ -69,6 +69,21 @@ type config struct {
 	Prometheus struct {
 		Enable bool `yaml:"enable"`
 	} `yaml:"prometheus"`
+
+	PagePreprocessLLM   LLMConfig `yaml:"page_preprocess_llm"`
+	EntityExtractionLLM LLMConfig `yaml:"entity_extraction_llm"`
+
+	Prompts struct {
+		PreprocessPath string `yaml:"preprocess_path"`
+		EntityPath     string `yaml:"entity_path"`
+	} `yaml:"prompts"`
+}
+
+type LLMConfig struct {
+	BaseURL string `yaml:"base_url"`
+	APIKey  string `yaml:"api_key"`
+	Model   string `yaml:"model"`
+	Timeout int    `yaml:"timeout"`
 }
 
 func InitConfig(configPath string) {

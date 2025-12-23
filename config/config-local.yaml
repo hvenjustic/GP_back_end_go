@@ -51,3 +51,21 @@ logSetting:
 prometheus:
   enable: false
 
+# 网页预处理 LLM 配置（用于 chunk 过滤，避免与抽取图谱的 LLM 混淆）
+page_preprocess_llm:
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+  api_key: sk-83cf7de3728045ef8e2d56139cc42401
+  model: qwen-plus
+  timeout: 120
+
+# 实体识别提取 LLM 配置（用于抽取图谱写入 graph_json）
+entity_extraction_llm:
+  base_url: https://api.vectorengine.ai
+  api_key: sk-acEHA0KQdu7Qs4xfkgakvlk5ee0n9JHjMAQd1gwUkGaj6PzL
+  model: gpt-4o-mini
+  timeout: 120
+
+prompts:
+  preprocess_path: ../prompt.md
+  entity_path: ../prompt.md
+
