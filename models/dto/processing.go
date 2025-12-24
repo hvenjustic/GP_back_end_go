@@ -18,3 +18,10 @@ type GraphBuildResponse struct {
 	GraphJSON     string `json:"graph_json,omitempty"`
 	LLMDurationMs int64  `json:"llm_duration_ms,omitempty"`
 }
+
+// QueueAckResponse 统一的异步入队响应
+type QueueAckResponse struct {
+	Queued   int    `json:"queued"`
+	QueueKey string `json:"queue_key"`
+	Pending  int64  `json:"pending"`
+}

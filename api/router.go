@@ -24,7 +24,9 @@ func SetRouter(r *gin.Engine) {
 		apiGroup.GET("/results", crawl.ListResults)
 		apiGroup.GET("/results/:id", crawl.GetResultDetail)
 		apiGroup.POST("/results/preprocess", crawl.PreprocessResult)
+		apiGroup.GET("/results/preprocess/status", crawl.GetPreprocessStatus)
 		apiGroup.POST("/results/graph", crawl.BuildGraph)
+		apiGroup.GET("/results/graph/status", crawl.GetGraphStatus)
 	}
 
 	// 需要认证的接口组 - 现在V1接口具有V2的所有特征
