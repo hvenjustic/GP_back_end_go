@@ -326,17 +326,6 @@ func buildVisualElements(g graphJSON) ([]dto.GraphVisualNode, []dto.GraphVisualE
 	nameIndex := make(map[string]string)
 	var nodes []dto.GraphVisualNode
 
-	normalizeKey := func(name, typ string) string {
-		key := strings.ToLower(strings.TrimSpace(name))
-		if typ != "" {
-			key = key + "||" + strings.ToLower(strings.TrimSpace(typ))
-		}
-		if key == "" {
-			key = "unknown"
-		}
-		return key
-	}
-
 	genID := func(base string) string {
 		clean := strings.TrimSpace(base)
 		clean = invalidIDChars.ReplaceAllString(clean, "_")
@@ -353,65 +342,70 @@ func buildVisualElements(g graphJSON) ([]dto.GraphVisualNode, []dto.GraphVisualE
 		return clean
 	}
 
-	resolveNode := func(name, typ string, raw map[string]any, desc string, extra map[string]any) string {
-		key := normalizeKey(name, typ)
-		if id, ok := nameIndex[key]; ok {
-			return id
-		}
-		label := strings.TrimSpace(name)
+	// 先遍历实体，生成 type:name 形式的 id，并记录 name -> id 的映射
+	for _, ent := range g.Entities {
+		name := strings.TrimSpace(ent.Name)
+		typ := strings.TrimSpace(ent.Type)
+		label := name
 		if label == "" {
 			label = "未知实体"
 		}
-		id := genID(fmt.Sprintf("%s::%s", typ, name))
-		node := dto.GraphVisualNode{
-			ID:          id,
+		nodeID := genID(fmt.Sprintf("%s:%s", typ, name))
+		if name != "" {
+			nameIndex[strings.ToLower(name)] = nodeID
+		}
+		nodes = append(nodes, dto.GraphVisualNode{
+			ID:          nodeID,
 			Name:        name,
 			Type:        typ,
 			Label:       label,
-			Description: desc,
-			Extra:       extra,
-			Raw:         raw,
-		}
-		nodes = append(nodes, node)
-		nameIndex[key] = id
-		return id
-	}
-
-	for _, ent := range g.Entities {
-		raw := map[string]any{
-			"aliases": ent.Aliases,
-			"extra":   ent.Extra,
-		}
-		resolveNode(ent.Name, ent.Type, raw, ent.Description, ent.Extra)
+			Description: ent.Description,
+			Extra:       ent.Extra,
+			Raw: map[string]any{
+				"aliases": ent.Aliases,
+				"extra":   ent.Extra,
+			},
+		})
 	}
 
 	usedEdgeIDs := make(map[string]int)
 	var edges []dto.GraphVisualEdge
 	for idx, rel := range g.Relations {
-		srcID := resolveNode(rel.Source, "", nil, "", nil)
-		dstID := resolveNode(rel.Target, "", nil, "", nil)
+		srcName := strings.TrimSpace(rel.Source)
+		dstName := strings.TrimSpace(rel.Target)
+		if srcName == "" || dstName == "" {
+			continue
+		}
+		srcID, okSrc := nameIndex[strings.ToLower(srcName)]
+		dstID, okDst := nameIndex[strings.ToLower(dstName)]
+		if !okSrc || !okDst {
+			continue
+		}
+
 		edgeType := strings.TrimSpace(rel.Type)
 		if edgeType == "" {
 			edgeType = "RELATED_TO"
 		}
-		edgeIDBase := fmt.Sprintf("%s-%s-%s", srcID, edgeType, dstID)
-		edgeID := edgeIDBase
-		if count := usedEdgeIDs[edgeIDBase]; count > 0 {
-			edgeID = fmt.Sprintf("%s_%d", edgeIDBase, count)
-		}
-		usedEdgeIDs[edgeIDBase]++
 
-		edge := dto.GraphVisualEdge{
+		baseID := fmt.Sprintf("%s:%s:%s", srcID, edgeType, dstID)
+		edgeID := baseID
+		if count := usedEdgeIDs[baseID]; count > 0 {
+			edgeID = fmt.Sprintf("%s_%d", baseID, count)
+		}
+		usedEdgeIDs[baseID]++
+
+		edges = append(edges, dto.GraphVisualEdge{
 			ID:     edgeID,
 			Source: srcID,
 			Target: dstID,
 			Type:   edgeType,
 			Label:  edgeType,
 			Raw: map[string]any{
-				"index": idx,
+				"index":       idx,
+				"source_name": srcName,
+				"target_name": dstName,
 			},
-		}
-		edges = append(edges, edge)
+		})
 	}
 
 	return nodes, edges
