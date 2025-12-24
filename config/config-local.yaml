@@ -60,7 +60,7 @@ page_preprocess_llm:
 
 # 实体识别提取 LLM 配置（用于抽取图谱写入 graph_json）
 entity_extraction_llm:
-  base_url: https://api.vectorengine.ai
+  base_url: https://api.vectorengine.ai/v1/chat/completions
   api_key: sk-acEHA0KQdu7Qs4xfkgakvlk5ee0n9JHjMAQd1gwUkGaj6PzL
   model: gpt-4o-mini
   timeout: 120
