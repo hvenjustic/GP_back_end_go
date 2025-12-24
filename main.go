@@ -30,6 +30,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go service.NewCrawlScheduler().Start(ctx)
+	go service.StartPreprocessWorkers(ctx)
+	go service.StartGraphWorkers(ctx)
 
 	api.Run()
 }

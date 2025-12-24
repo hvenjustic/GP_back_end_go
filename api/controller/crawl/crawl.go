@@ -127,11 +127,13 @@ func PreprocessResult(c *gin.Context) {
 		return
 	}
 
-	resp, err := service.RunPreprocessLLM(c.Request.Context(), req.ID)
+	resp, err := service.EnqueuePreprocess(c.Request.Context(), req.ID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, service.ErrBadRequest) {
 			status = http.StatusBadRequest
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
 		}
 		c.JSON(status, dto.ErrorResponse{Error: err.Error(), Code: status})
 		return
@@ -146,13 +148,33 @@ func BuildGraph(c *gin.Context) {
 		return
 	}
 
-	resp, err := service.BuildGraphFromProcessed(c.Request.Context(), req.ID)
+	resp, err := service.EnqueueGraphBuild(c.Request.Context(), req.ID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, service.ErrBadRequest) {
 			status = http.StatusBadRequest
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
 		}
 		c.JSON(status, dto.ErrorResponse{Error: err.Error(), Code: status})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func GetPreprocessStatus(c *gin.Context) {
+	resp, err := service.GetPreprocessStatus(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error(), Code: http.StatusInternalServerError})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func GetGraphStatus(c *gin.Context) {
+	resp, err := service.GetGraphStatus(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Error: err.Error(), Code: http.StatusInternalServerError})
 		return
 	}
 	c.JSON(http.StatusOK, resp)
