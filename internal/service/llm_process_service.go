@@ -75,14 +75,17 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 
 	start := time.Now()
 	var sections []string
+	failures := 0
 
 	for idx, link := range store.FitMarkdown {
 		text, err := downloadText(ctx, link)
 		if err != nil {
 			log.Error("PreprocessLLM", "download failed", err.Error(), "url", link)
+			failures++
 			continue
 		}
 		if strings.TrimSpace(text) == "" {
+			failures++
 			continue
 		}
 
@@ -90,6 +93,7 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 		respText, err := llm.Chat(ctx, promptText)
 		if err != nil {
 			log.Error("PreprocessLLM", "llm call failed", err.Error(), "url", link)
+			failures++
 			continue
 		}
 
@@ -97,11 +101,13 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 		var parsed preprocessLLMResp
 		if err := json.Unmarshal([]byte(respText), &parsed); err != nil {
 			log.Error("PreprocessLLM", "parse llm resp failed", err.Error(), "raw", respText)
+			failures++
 			continue
 		}
 		body := strings.TrimSpace(parsed.bodyText())
 		if body == "" {
 			if !parsed.HasRelevantInfo {
+				failures++
 				continue
 			}
 			body = respText
@@ -112,7 +118,7 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 	}
 
 	if len(sections) == 0 {
-		return dto.PreprocessResponse{}, fmt.Errorf("无可用预处理内容，处理失败")
+		return dto.PreprocessResponse{}, fmt.Errorf("无可用预处理内容，处理失败（失败片段 %d 个）", failures)
 	}
 
 	merged := strings.Join(sections, "\n\n")
@@ -194,6 +200,8 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 	}
 
 	start := time.Now()
+	successBatches := 0
+	failures := 0
 	for i := 0; i < len(chunks); i += 3 {
 		end := i + 3
 		if end > len(chunks) {
@@ -203,20 +211,43 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 		promptText := strings.ReplaceAll(prompt, "{{markdown}}", batch)
 		promptText = strings.ReplaceAll(promptText, "{{oldjson}}", utils.StructToJsonString(currentJSON))
 
-		respText, err := llm.Chat(ctx, promptText)
-		if err != nil {
-			return dto.GraphBuildResponse{}, fmt.Errorf("llm 抽取失败：%w", err)
-		}
-		respText = stripCodeFence(respText)
+		attempts := 0
+		for {
+			respText, err := llm.Chat(ctx, promptText)
+			if err != nil {
+				attempts++
+				log.Error("GraphLLM", "llm chat failed", err.Error(), "batch_start", i, "batch_end", end, "attempt", attempts)
+				if attempts >= 2 {
+					failures++
+					break
+				}
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			respText = stripCodeFence(respText)
 
-		var next map[string]any
-		if err := json.Unmarshal([]byte(respText), &next); err != nil {
-			snippet := truncateResp(respText, 200)
-			log.Error("GraphLLM", "unmarshal_failed", err.Error(), "resp_snippet", snippet)
-			return dto.GraphBuildResponse{}, fmt.Errorf("%w: 解析 llm 抽取结果失败，响应片段=%s", ErrBadRequest, snippet)
+			var next map[string]any
+			if err := json.Unmarshal([]byte(respText), &next); err != nil {
+				attempts++
+				snippet := truncateResp(respText, 200)
+				log.Error("GraphLLM", "unmarshal_failed", err.Error(), "resp_snippet", snippet, "attempt", attempts)
+				if attempts >= 2 {
+					failures++
+					break
+				}
+				time.Sleep(10 * time.Second)
+				continue
+			}
+
+			currentJSON = next
+			successBatches++
+			log.Info("GraphLLM", "batch_ok", "batch_start", i, "batch_end", end, "resp_len", len(respText))
+			break
 		}
-		currentJSON = next
-		log.Info("GraphLLM", "batch_ok", "batch_start", i, "batch_end", end, "resp_len", len(respText))
+	}
+
+	if successBatches == 0 {
+		return dto.GraphBuildResponse{}, fmt.Errorf("图谱生成失败，所有批次均出错（失败批次 %d 个）", failures)
 	}
 
 	graph := utils.StructToJsonString(currentJSON)
