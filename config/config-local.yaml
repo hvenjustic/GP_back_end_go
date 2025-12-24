@@ -62,7 +62,7 @@ page_preprocess_llm:
 entity_extraction_llm:
   base_url: https://api.vectorengine.ai/v1/chat/completions
   api_key: sk-acEHA0KQdu7Qs4xfkgakvlk5ee0n9JHjMAQd1gwUkGaj6PzL
-  model: gpt-4o-mini
+  model: gpt-5.1
   timeout: 120
 
 prompts:
