@@ -76,6 +76,7 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 	start := time.Now()
 	var sections []string
 	failures := 0
+	totalChunks := len(store.FitMarkdown)
 
 	for idx, link := range store.FitMarkdown {
 		text, err := downloadText(ctx, link)
@@ -90,6 +91,7 @@ func RunPreprocessLLM(ctx context.Context, id uint64) (dto.PreprocessResponse, e
 		}
 
 		promptText := strings.ReplaceAll(prompt, "{{text_block}}", text)
+		log.Warn("PreprocessLLM", "llm_call_progress", fmt.Sprintf("%d/%d", idx+1, totalChunks))
 		respText, err := llm.Chat(ctx, promptText)
 		if err != nil {
 			log.Error("PreprocessLLM", "llm call failed", err.Error(), "url", link)
@@ -202,6 +204,7 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 	start := time.Now()
 	successBatches := 0
 	failures := 0
+	totalChunks := len(chunks)
 	for i := 0; i < len(chunks); i += 3 {
 		end := i + 3
 		if end > len(chunks) {
@@ -213,6 +216,7 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 
 		attempts := 0
 		for {
+			log.Warn("GraphLLM", "llm_call_progress", fmt.Sprintf("%d-%d/%d", i+1, end, totalChunks))
 			respText, err := llm.Chat(ctx, promptText)
 			if err != nil {
 				attempts++
