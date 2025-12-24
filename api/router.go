@@ -23,6 +23,7 @@ func SetRouter(r *gin.Engine) {
 		apiGroup.POST("/queues/clear", crawl.ClearQueue)
 		apiGroup.GET("/results", crawl.ListResults)
 		apiGroup.GET("/results/:id", crawl.GetResultDetail)
+		apiGroup.GET("/results/:id/graph_view", crawl.GetGraphVisual)
 		apiGroup.POST("/results/preprocess", crawl.PreprocessResult)
 		apiGroup.GET("/results/preprocess/status", crawl.GetPreprocessStatus)
 		apiGroup.POST("/results/graph", crawl.BuildGraph)

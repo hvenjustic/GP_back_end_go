@@ -65,3 +65,20 @@
 
 直接返回该行的完整 JSON。
 
+## 结果图谱（前端渲染专用）
+
+- `GET /api/results/:id/graph_view`
+
+返回节点/边数组，可直接用于前端 Cytoscape 渲染，示例：
+
+```json
+{
+  "nodes": [
+    { "id": "Company::ACME", "name": "ACME", "type": "Company", "label": "ACME" }
+  ],
+  "edges": [
+    { "id": "Company::ACME-INVESTS_IN-Startup::X", "source": "Company::ACME", "target": "Startup::X", "type": "INVESTS_IN" }
+  ]
+}
+```
+

@@ -120,6 +120,29 @@ func GetResultDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func GetGraphVisual(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Error: "id invalid", Code: http.StatusBadRequest})
+		return
+	}
+
+	resp, err := service.GetGraphVisual(c.Request.Context(), id)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, service.ErrBadRequest):
+			status = http.StatusBadRequest
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			status = http.StatusNotFound
+		}
+		c.JSON(status, dto.ErrorResponse{Error: err.Error(), Code: status})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 func PreprocessResult(c *gin.Context) {
 	var req dto.IDRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.ID == 0 {

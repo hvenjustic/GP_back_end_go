@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -270,6 +271,150 @@ func BuildGraphFromProcessed(ctx context.Context, id uint64) (dto.GraphBuildResp
 		GraphJSON:     graph,
 		LLMDurationMs: duration,
 	}, nil
+}
+
+type graphEntity struct {
+	Name        string         `json:"name"`
+	Type        string         `json:"type"`
+	Aliases     []string       `json:"aliases"`
+	Description string         `json:"description"`
+	Extra       map[string]any `json:"extra"`
+}
+
+type graphRelation struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Type   string `json:"type"`
+}
+
+type graphJSON struct {
+	Entities  []graphEntity   `json:"entities"`
+	Relations []graphRelation `json:"relations"`
+}
+
+var invalidIDChars = regexp.MustCompile(`[^a-zA-Z0-9:_-]+`)
+
+// GetGraphVisual 将 graph_json 转换为前端可直接渲染的节点/边结构
+func GetGraphVisual(ctx context.Context, id uint64) (dto.GraphVisualResponse, error) {
+	if id == 0 {
+		return dto.GraphVisualResponse{}, fmt.Errorf("%w: id invalid", ErrBadRequest)
+	}
+
+	dao := mysql.NewCrawlTargetDAO()
+	record, err := dao.GetDetailByID(id)
+	if err != nil {
+		return dto.GraphVisualResponse{}, err
+	}
+	if record.GraphJSON == nil || strings.TrimSpace(*record.GraphJSON) == "" {
+		return dto.GraphVisualResponse{}, fmt.Errorf("%w: graph_json 为空", ErrBadRequest)
+	}
+
+	var parsed graphJSON
+	if err := json.Unmarshal([]byte(*record.GraphJSON), &parsed); err != nil {
+		return dto.GraphVisualResponse{}, fmt.Errorf("%w: 解析 graph_json 失败: %v", ErrBadRequest, err)
+	}
+
+	nodes, edges := buildVisualElements(parsed)
+	return dto.GraphVisualResponse{
+		Nodes: nodes,
+		Edges: edges,
+	}, nil
+}
+
+func buildVisualElements(g graphJSON) ([]dto.GraphVisualNode, []dto.GraphVisualEdge) {
+	usedNodeIDs := make(map[string]bool)
+	nameIndex := make(map[string]string)
+	var nodes []dto.GraphVisualNode
+
+	normalizeKey := func(name, typ string) string {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if typ != "" {
+			key = key + "||" + strings.ToLower(strings.TrimSpace(typ))
+		}
+		if key == "" {
+			key = "unknown"
+		}
+		return key
+	}
+
+	genID := func(base string) string {
+		clean := strings.TrimSpace(base)
+		clean = invalidIDChars.ReplaceAllString(clean, "_")
+		if clean == "" {
+			clean = "node"
+		}
+		original := clean
+		suffix := 1
+		for usedNodeIDs[clean] {
+			clean = fmt.Sprintf("%s_%d", original, suffix)
+			suffix++
+		}
+		usedNodeIDs[clean] = true
+		return clean
+	}
+
+	resolveNode := func(name, typ string, raw map[string]any, desc string, extra map[string]any) string {
+		key := normalizeKey(name, typ)
+		if id, ok := nameIndex[key]; ok {
+			return id
+		}
+		label := strings.TrimSpace(name)
+		if label == "" {
+			label = "未知实体"
+		}
+		id := genID(fmt.Sprintf("%s::%s", typ, name))
+		node := dto.GraphVisualNode{
+			ID:          id,
+			Name:        name,
+			Type:        typ,
+			Label:       label,
+			Description: desc,
+			Extra:       extra,
+			Raw:         raw,
+		}
+		nodes = append(nodes, node)
+		nameIndex[key] = id
+		return id
+	}
+
+	for _, ent := range g.Entities {
+		raw := map[string]any{
+			"aliases": ent.Aliases,
+			"extra":   ent.Extra,
+		}
+		resolveNode(ent.Name, ent.Type, raw, ent.Description, ent.Extra)
+	}
+
+	usedEdgeIDs := make(map[string]int)
+	var edges []dto.GraphVisualEdge
+	for idx, rel := range g.Relations {
+		srcID := resolveNode(rel.Source, "", nil, "", nil)
+		dstID := resolveNode(rel.Target, "", nil, "", nil)
+		edgeType := strings.TrimSpace(rel.Type)
+		if edgeType == "" {
+			edgeType = "RELATED_TO"
+		}
+		edgeIDBase := fmt.Sprintf("%s-%s-%s", srcID, edgeType, dstID)
+		edgeID := edgeIDBase
+		if count := usedEdgeIDs[edgeIDBase]; count > 0 {
+			edgeID = fmt.Sprintf("%s_%d", edgeIDBase, count)
+		}
+		usedEdgeIDs[edgeIDBase]++
+
+		edge := dto.GraphVisualEdge{
+			ID:     edgeID,
+			Source: srcID,
+			Target: dstID,
+			Type:   edgeType,
+			Label:  edgeType,
+			Raw: map[string]any{
+				"index": idx,
+			},
+		}
+		edges = append(edges, edge)
+	}
+
+	return nodes, edges
 }
 
 func parseMarkdownStore(raw *string) (*markdownStore, error) {
